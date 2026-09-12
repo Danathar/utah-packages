@@ -20,10 +20,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.rebuild_plan import overflow, plan, published_from_primary, stage_outputs
+from tools.rebuild_plan import (
+    changed_entries,
+    overflow,
+    plan,
+    published_from_primary,
+    stage_outputs,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 PUBLISHED_REPO_TIMEOUT = 120
+INVENTORY = "config/upstream-sources.json"
 
 
 def changed_recipes(base_sha: str) -> set[str]:
@@ -38,11 +45,33 @@ def changed_recipes(base_sha: str) -> set[str]:
     paths = subprocess.check_output(
         ["git", "diff", "--name-only", f"{base_sha}..HEAD"], text=True
     ).splitlines()
-    return {
+    changed = {
         match.group(1)
         for path in paths
         if (match := re.match(r"^packages/([^/]+)/", path))
     }
+    return changed | changed_inventory(base_sha, paths)
+
+
+def changed_inventory(base_sha: str, paths: list[str]) -> set[str]:
+    """Names whose entry in the source inventory changed since the base.
+
+    Reads the old config out of git rather than trusting the diff text, so a
+    reformat or a moved entry does not read as a change to every package.
+    """
+    if INVENTORY not in paths:
+        return set()
+    try:
+        before = json.loads(
+            subprocess.check_output(["git", "show", f"{base_sha}:{INVENTORY}"], text=True)
+        )
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        # The inventory did not exist or does not parse at the base commit.
+        # Nothing can be proven unchanged, so prove nothing and let the
+        # published comparison decide on its own.
+        return set()
+    after = json.loads((ROOT / INVENTORY).read_text())
+    return changed_entries(before, after)
 
 
 def fetch_published(base_url: str) -> dict[str, tuple[str, str]]:
@@ -72,7 +101,7 @@ def fetch_published(base_url: str) -> dict[str, tuple[str, str]]:
 
 
 def main() -> int:
-    config = json.loads((ROOT / "config" / "upstream-sources.json").read_text())
+    config = json.loads((ROOT / INVENTORY).read_text())
     full = os.environ.get("FULL") == "1"
     factory_repo = os.environ.get("FACTORY_REPO", "")
 

@@ -131,6 +131,31 @@ def is_published(root: Path, entry: dict, published: dict[str, tuple[str, str]])
     return match.group("base") + match.group("bump") == expected
 
 
+def changed_entries(before: dict, after: dict) -> set[str]:
+    """Names whose inventory entry is not identical in both configs.
+
+    A recipe edit reaches `changed` through the git diff of packages/<name>/,
+    but an inventory edit reached nothing, and that gap published a broken
+    repository. Moving mozc from stage 0 to stage 1 and gnome-shell from 9 to
+    10 was exactly the fix their soname breaks needed -- and it did nothing,
+    because a stage move leaves Version and Release untouched, so both matched
+    the published listing, were skipped, and came back from the seeded image
+    as the very builds the move existed to replace. The stage is part of how a
+    package is built, so a change to it has to invalidate the match the same
+    way a changed spec does.
+
+    Compares whole entries rather than the stage alone: a new source URL, a
+    new checksum or a new dist_bump all change what gets built, and none of
+    them is visible in the published NEVR either.
+    """
+    old = {entry["name"]: entry for entry in before.get("packages", [])}
+    return {
+        entry["name"]
+        for entry in after.get("packages", [])
+        if old.get(entry["name"]) != entry
+    }
+
+
 def plan(
     config: dict,
     root: Path,

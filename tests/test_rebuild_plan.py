@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from tools.rebuild_plan import (
+    changed_entries,
     expected_release,
     is_published,
     overflow,
@@ -122,6 +123,45 @@ class PublishedComparisonTests(unittest.TestCase):
             self.assertFalse(
                 is_published(root, entry, {"demo": ("1.1", "3.hum1.bfin")})
             )
+
+
+class ChangedEntryTests(unittest.TestCase):
+    """A stage move has to force a rebuild.
+
+    This is the gap that published a repository whose mozc and gnome-shell
+    were the exact builds the stage move existed to replace: the move changed
+    neither Version nor Release, so both matched the published listing and
+    were skipped.
+    """
+
+    def _config(self, **overrides) -> dict:
+        entry = {"name": "mozc", "version": "1.0", "stage": 0}
+        entry.update(overrides)
+        return {"packages": [entry, {"name": "quiet", "version": "2.0"}]}
+
+    def test_a_stage_move_counts_as_changed(self) -> None:
+        self.assertEqual(
+            changed_entries(self._config(), self._config(stage=1)), {"mozc"}
+        )
+
+    def test_an_untouched_entry_does_not(self) -> None:
+        self.assertEqual(changed_entries(self._config(), self._config()), set())
+
+    def test_a_new_source_or_checksum_counts(self) -> None:
+        self.assertEqual(
+            changed_entries(self._config(), self._config(sha512="beef")), {"mozc"}
+        )
+
+    def test_a_new_entry_counts(self) -> None:
+        after = self._config()
+        after["packages"].append({"name": "fresh", "version": "1.0"})
+        self.assertEqual(changed_entries(self._config(), after), {"fresh"})
+
+    def test_a_removed_entry_is_not_reported(self) -> None:
+        # There is nothing left to build, so it must not reach the matrix.
+        before = self._config()
+        after = {"packages": [before["packages"][1]]}
+        self.assertEqual(changed_entries(before, after), set())
 
 
 class PlanTests(unittest.TestCase):
