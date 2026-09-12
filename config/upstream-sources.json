@@ -2188,7 +2188,8 @@
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/samba/samba-4.25.0rc1.tar.xz/sha512/34b1a2ebf9b391fa9f03cfc6bb95cfb47237e1c0a677144b6e699420fe27fe22a113783e6bc17244948156091bf1d24debe3b996ff026724f0c2aaf06e2ed736/samba-4.25.0rc1.tar.xz",
       "filename": "samba-4.25.0rc1.tar.xz",
       "sha512": "34b1a2ebf9b391fa9f03cfc6bb95cfb47237e1c0a677144b6e699420fe27fe22a113783e6bc17244948156091bf1d24debe3b996ff026724f0c2aaf06e2ed736",
-      "stage": 6
+      "stage": 6,
+      "rebuild_reason": "Relink against Hummingbird ICU 78. 507b2bf made 78 the sole runtime ICU, but the published samba still requires libicuuc.so.77 and libicui18n.so.77, which no longer resolve; Release is %{samba_release}, a macro dist_bump refuses to guess at, so this entry change is what forces the rebuild."
     },
     {
       "name": "sassc",
