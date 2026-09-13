@@ -53,10 +53,6 @@ HUMMINGBIRD_WINS = (
 EXCLUDED_EVERYWHERE = (
     "ruby3.3-default-gems",
     "ruby3.4-default-gems",
-    # Hummingbird ships libicu 77.1 beside its own 78.3, so per-repo exclusion
-    # cannot choose between them either: the factory built libical against
-    # .so.78 and samba against .so.77, and nothing could install both.
-    "libicu-77.*-*hum1",
 )
 
 FEDORA_RELEASEVER = "44"

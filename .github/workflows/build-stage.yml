@@ -186,28 +186,7 @@ jobs:
               # libvdpau, appstream and libtheora all failed here. Exclude the
               # superseded ruby globally, from every repo, so 4.0 is the only
               # candidate.
-              #
-              # Hummingbird ships libicu 77.1 beside its own 78.3, and that is
-              # the same-repo shape too: excluding libicu from Fedora settles
-              # nothing between two Hummingbird builds. Whichever one a given
-              # buildroot happens to pick is what that package links, so the
-              # factory produced libical against .so.78 and samba against
-              # .so.77 and the two could not then be installed together --
-              # gnome-control-center could not even resolve a buildroot:
-              #
-              #   package libical ... from stages requires libicuuc.so.78
-              #   package samba-core-libs ... from stages requires libicuuc.so.77
-              #   cannot install both libicu-78.3-8.hum1 and libicu-77.1-2.1.hum1
-              #
-              # 507b2bf settled that 78 is the sole ICU and asked for exactly
-              # this: exclude the stale Hummingbird 77, not libicu at large.
-              # 012cb6a had to remove a blanket libicu-77 exclusion because it
-              # also caught Fedora build-only consumers; the hum1 release in
-              # this pattern is what keeps it off them. Spelled with release as
-              # its own field because 1f88491 found dnf splits a spec on its
-              # dashes before globbing, so libicu-77.*hum1 parses its version
-              # as 77.*hum1 and matches nothing at all.
-              GLOBAL_EXCLUDE="ruby3.3-default-gems,ruby3.4-default-gems,libicu-77.*-*hum1"
+              GLOBAL_EXCLUDE="ruby3.3-default-gems,ruby3.4-default-gems"
               echo "global exclusions: $GLOBAL_EXCLUDE"
               if [ -n "${FACTORY_REPO:-}" ]; then
                 printf "[factory]\nname=factory\nbaseurl=%s\nenabled=1\ngpgcheck=0\npriority=5\n" \

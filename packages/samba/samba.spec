@@ -300,7 +300,16 @@ BuildRequires: libaio-devel
 BuildRequires: libarchive-devel
 BuildRequires: libattr-devel
 BuildRequires: libcap-devel
-BuildRequires: libicu-devel
+# Hummingbird ships libicu 77.1 beside its own 78.3 and an unversioned
+# BuildRequires let dnf take either, so samba linked libicuuc.so.77 while the
+# factory libical linked .so.78; the two cannot be installed together, and
+# gnome-control-center could not resolve a build root at all. 507b2bf settled
+# that 78 is the sole runtime ICU, so ask for it here rather than excluding 77
+# from every build root: 012cb6a already removed such an exclusion because
+# Fedora build-only consumers legitimately link 77 -- notably the Fedora
+# libsmbclient that gvfs and ffmpeg resolve at stages 1 and 3, before this
+# factory has built samba at all.
+BuildRequires: libicu-devel >= 78
 BuildRequires: libcmocka-devel
 BuildRequires: libtirpc-devel
 BuildRequires: libuuid-devel
