@@ -2,7 +2,7 @@
 """Deterministic first-party Source0 generation.
 
 The factory contract is that source payloads come from upstream releases and
-Fedora dist-git supplies the recipe only. Three recipes consume an archive
+Fedora dist-git supplies the recipe only. Two recipes consume an archive
 that no upstream publishes verbatim:
 
 - intel-media-driver-free: the upstream tag archive with non-free kernel

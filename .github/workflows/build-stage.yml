@@ -87,7 +87,7 @@ jobs:
             -v "$PWD/work:/work:Z" \
             -v "$PWD/packages:/packages:ro,Z" \
             -v "$PWD/config:/repos:ro,Z" \
-            quay.io/fedora/fedora:44 bash -exc '
+            quay.io/fedora/fedora@sha256:a58a82ed658c109c104e97fdcce52690337cff52e68dc8fa9c033a5fe38dfeec bash -exc '
               # The fedora:rawhide image ships fedora-cisco-openh264 enabled, but
               # its packages are signed with Cisco key, which the image does not
               # trust -- so any builddep graph reaching gstreamer/pipewire dies on
@@ -173,21 +173,20 @@ jobs:
               HB_EXCLUDE="ruby-default-gems,ruby3.3-default-gems,ruby3.4-default-gems,libicu,icu,gpgme,qt6-qtbase,sqlite,sqlite-libs"
               EXCLUDE="${HB_EXCLUDE}${EXCLUDE:+,}${EXCLUDE}"
               echo "hummingbird exclusions: $HB_EXCLUDE"
-              # The exclusions above are per-repo, which cannot settle a conflict
-              # where both sides come from the SAME repo. Hummingbird now ships
-              # ruby3.4-default-gems AND ruby4.0-default-gems, and they claim the
-              # same files, so the buildroot resolves and then dies in rpm:
+              # Hummingbird ships ruby3.3-, ruby3.4- and ruby4.0-default-gems,
+              # and all three claim the same files, so the buildroot resolves and
+              # then dies in rpm:
               #   Transaction failed: Rpm transaction failed.
               #   file /usr/bin/erb conflicts between attempted installs of
               #     ruby4.0-default-gems-4.0.6-37.3.hum1 and
               #     ruby3.4-default-gems-3.4.10-31.7.hum1
               # It reads as nothing at all in a tail: dnf reports success, the
               # error lands after "Running transaction". gcc, git, iputils,
-              # libvdpau, appstream and libtheora all failed here. Exclude the
-              # superseded ruby globally, from every repo, so 4.0 is the only
-              # candidate.
-              GLOBAL_EXCLUDE="ruby3.3-default-gems,ruby3.4-default-gems"
-              echo "global exclusions: $GLOBAL_EXCLUDE"
+              # libvdpau, appstream and libtheora all failed here (issue #75).
+              # Exclude the legacy default-gems from the Hummingbird repository so
+              # ruby4.0 alone answers for default gems.
+              HB_REPO_EXCLUDE="ruby3.3-default-gems,ruby3.4-default-gems"
+              echo "hummingbird repo exclusions: $HB_REPO_EXCLUDE"
               if [ -n "${FACTORY_REPO:-}" ]; then
                 printf "[factory]\nname=factory\nbaseurl=%s\nenabled=1\ngpgcheck=0\npriority=5\n" \
                   "$FACTORY_REPO" > /etc/yum.repos.d/factory.repo
@@ -286,7 +285,8 @@ jobs:
               builddep_attempt() {
                 dnf -y $disable ${EXCLUDE:+--setopt=fedora.excludepkgs="$EXCLUDE"} \
                   ${EXCLUDE:+--setopt=updates.excludepkgs="$EXCLUDE"} \
-                  ${GLOBAL_EXCLUDE:+--exclude="$GLOBAL_EXCLUDE"} builddep -D "_sourcedir /packages/$PACKAGE" "$1"
+                  ${HB_REPO_EXCLUDE:+--setopt=public-hummingbird-x86_64-rpms.excludepkgs="$HB_REPO_EXCLUDE"} \
+                  builddep -D "_sourcedir /packages/$PACKAGE" "$1"
               }
               with_backoff() {
                 delay=5

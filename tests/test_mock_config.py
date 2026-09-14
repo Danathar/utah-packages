@@ -5,7 +5,7 @@ import re
 import unittest
 
 from tools.mock_config import (
-    EXCLUDED_EVERYWHERE,
+    HUMMINGBIRD_REPO_EXCLUDE,
     FEDORA_RELEASEVER,
     HUMMINGBIRD_WINS,
     render,
@@ -35,8 +35,8 @@ class PolicyAgreementTests(unittest.TestCase):
     def test_hummingbird_precedence_list_matches_the_container(self) -> None:
         self.assertEqual(workflow_list("HB_EXCLUDE"), HUMMINGBIRD_WINS)
 
-    def test_global_exclusion_list_matches_the_container(self) -> None:
-        self.assertEqual(workflow_list("GLOBAL_EXCLUDE"), EXCLUDED_EVERYWHERE)
+    def test_hummingbird_repo_exclusion_matches_the_container(self) -> None:
+        self.assertEqual(workflow_list("HB_REPO_EXCLUDE"), HUMMINGBIRD_REPO_EXCLUDE)
 
     def test_builds_against_the_same_fedora_the_container_uses(self) -> None:
         self.assertIn(
@@ -54,11 +54,11 @@ class RenderTests(unittest.TestCase):
         self.assertIn("[public-hummingbird-x86_64-rpms]", config)
         self.assertIn("priority=10", config)
 
-    def test_excludes_the_superseded_ruby_from_every_repository(self) -> None:
+    def test_excludes_the_legacy_ruby_from_the_repository_shipping_it(self) -> None:
         config = render()
-        main_section = config.split("[fedora]")[0]
-        for name in EXCLUDED_EVERYWHERE:
-            self.assertIn(name, main_section)
+        hummingbird = config.split("[public-hummingbird-x86_64-rpms]")[1]
+        for name in HUMMINGBIRD_REPO_EXCLUDE:
+            self.assertIn(name, hummingbird)
 
     def test_fedora_may_not_answer_for_what_an_earlier_stage_built(self) -> None:
         config = render(prior_built=("accountsservice", "accountsservice-libs"))

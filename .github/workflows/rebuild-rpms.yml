@@ -139,7 +139,7 @@ jobs:
             -v "$PWD/work:/work:Z" \
             -v "$PWD/packages:/packages:ro,Z" \
             -v "$PWD/config:/repos:ro,Z" \
-            quay.io/fedora/fedora:44 bash -exc '
+            quay.io/fedora/fedora@sha256:a58a82ed658c109c104e97fdcce52690337cff52e68dc8fa9c033a5fe38dfeec bash -exc '
               disable=--disablerepo=fedora-cisco-openh264
               # The Fedora container images set tsflags=nodocs, so every %doc file is
               # dropped at install time. rand_core ships its crate docs that way and
@@ -372,7 +372,7 @@ jobs:
           docker run --rm \
             -v "$PWD/built:/built:ro,Z" \
             -v "$PWD/config:/repos:ro,Z" \
-            quay.io/fedora/fedora:44 bash -exc '
+            quay.io/fedora/fedora@sha256:a58a82ed658c109c104e97fdcce52690337cff52e68dc8fa9c033a5fe38dfeec bash -exc '
               dnf -y install rpmdevtools >/dev/null
               cp /repos/hummingbird.repo /etc/yum.repos.d/
               disable=--disablerepo=fedora-cisco-openh264
@@ -546,6 +546,7 @@ jobs:
             | tee /dev/stderr | xargs -r rm -f
           createrepo_c --update repository
           curl -fsSL https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64 -o cosign
+          echo '8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b  cosign' | sha256sum -c -
           install -m 0755 cosign /usr/local/bin/cosign
           cosign sign-blob --yes --bundle repository/repodata/repomd.xml.bundle repository/repodata/repomd.xml
       - name: Validate Hummingbird-only consumer transaction

@@ -13,7 +13,7 @@ hand, which is how `USER` was missed.
 Using mock needs a config that carries the same build-root policy the container
 assembles by hand: Fedora paired with Hummingbird, Hummingbird winning by
 priority and by name, prior stages winning over both, and one superseded ruby
-excluded everywhere. That policy is what this renders.
+excluded from the repository that ships them. That policy is what this renders.
 
 The container path in build-stage.yml keeps that policy inline, and this module
 restates it, so tests/test_mock_config.py parses the workflow and fails if the
@@ -46,11 +46,11 @@ HUMMINGBIRD_WINS = (
     "sqlite-libs",
 )
 
-# Per-repo exclusion cannot settle a conflict where both sides come from the
-# same repository. Hummingbird ships ruby3.4-default-gems and
-# ruby4.0-default-gems, and they claim the same files, so the root resolves and
-# then dies in rpm on /usr/bin/erb. Exclude the superseded one everywhere.
-EXCLUDED_EVERYWHERE = (
+# Hummingbird ships ruby3.3-, ruby3.4- and ruby4.0-default-gems, and all three
+# claim the same files, so the root resolves and then dies in rpm on
+# /usr/bin/erb (issue #75). Exclude the legacy pair from the Hummingbird
+# repository, where they are the only providers, so ruby4.0 alone answers.
+HUMMINGBIRD_REPO_EXCLUDE = (
     "ruby3.3-default-gems",
     "ruby3.4-default-gems",
 )
@@ -92,7 +92,6 @@ best=1
 protected_packages=
 module_platform_id=platform:f{releasever}
 user_agent=utah-packages-mock/1
-excludepkgs={excluded_everywhere}
 
 [fedora]
 name=fedora
@@ -116,6 +115,7 @@ sslverify=1
 gpgcheck=0
 priority=10
 zchunk=false
+excludepkgs={hummingbird_repo_excludes}
 {extra_repos}\"\"\"
 """
 
@@ -167,7 +167,7 @@ def render(
     return TEMPLATE.format(
         root_name=root_name,
         releasever=FEDORA_RELEASEVER,
-        excluded_everywhere=",".join(EXCLUDED_EVERYWHERE),
+        hummingbird_repo_excludes=",".join(HUMMINGBIRD_REPO_EXCLUDE),
         fedora_excludes=fedora_excludes,
         extra_repos=extra,
     )

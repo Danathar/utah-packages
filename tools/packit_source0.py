@@ -11,6 +11,10 @@ import subprocess
 import sys
 import tarfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from tools.package_inventory import source_locks
+
 
 def verified_source0(root: Path, working_directory: Path | None = None) -> str:
     spec_path = os.environ.get("PACKIT_SPECFILE_PATH")
@@ -32,19 +36,14 @@ def verified_source0(root: Path, working_directory: Path | None = None) -> str:
         raise ValueError(f"cannot uniquely locate Packit spec file: {spec_path}")
 
     package_name = candidates[0].parent.name
-    config = json.loads((root / "config" / "upstream-sources.json").read_text())
-    matches = [
-        package
-        for package in config["packages"]
-        if package["name"] == package_name
-    ]
-    if len(matches) != 1:
-        raise ValueError(f"cannot uniquely locate source lock for {package_name}")
+    lock = source_locks(root).get(package_name)
+    if lock is None:
+        raise ValueError(f"no source lock for {package_name}")
 
-    if matches[0].get("no_upstream_source"):
-        return _placeholder_archive(candidates[0].parent, package_name, matches[0]["version"])
+    if lock.get("no_upstream_source"):
+        return _placeholder_archive(candidates[0].parent, package_name, lock["version"])
 
-    archive = candidates[0].parent / matches[0]["filename"]
+    archive = candidates[0].parent / lock["filename"]
     if not archive.is_file():
         raise ValueError(f"verified Source0 is not staged: {archive}")
     working_directory = (working_directory or Path.cwd()).resolve()
