@@ -29,7 +29,7 @@ def query(package: str) -> dict[str, str] | None:
     lines = [line for line in result.stdout.splitlines() if line and "(none)" not in line]
     if not lines:
         return None
-    name, evr, arch, sourcerpm = lines[0].split("\\t", 3)
+    name, evr, arch, sourcerpm = lines[0].split("\t", 3)
     return {"name": name, "evr": evr, "arch": arch, "sourcerpm": sourcerpm}
 
 
