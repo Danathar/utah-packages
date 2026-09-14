@@ -71,8 +71,9 @@ def spec_release(spec: str) -> str:
     if match is None:
         raise BumpError("spec has no Release: line")
     # The dist macro and every optional sub-macro sit after the first `%`, so
-    # the literal release is everything before it. Nothing to strip separately.
-    return match.group(1).split("%", 1)[0].strip()
+    # the literal release is everything before it. A (\S+) capture carries no
+    # whitespace, so nothing further needs stripping.
+    return match.group(1).split("%", 1)[0]
 
 
 def suffix(entry: dict, release: str) -> str:
@@ -98,7 +99,19 @@ def main(name: str) -> str:
     specs = sorted((ROOT / "packages" / name).glob("*.spec"))
     if not specs:
         raise BumpError(f"{name} records a dist_bump but has no spec")
-    return suffix(entry, spec_release(specs[0].read_text()))
+    release = spec_release(specs[0].read_text())
+    if not release:
+        # A purely-macro Release: (%autorelease, %{baserelease}) has no literal
+        # segment to compare against the recorded baseline, so the bump is
+        # skipped. build-stage.yml captures main()'s stdout, so a silent "" would
+        # drop the rebuild with no trace and ship an RPM that does not supersede;
+        # log it on stderr to keep the skip observable.
+        print(
+            f"{name}: dist_bump skipped, Release: has no comparable baseline",
+            file=sys.stderr,
+        )
+        return ""
+    return suffix(entry, release)
 
 
 if __name__ == "__main__":

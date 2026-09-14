@@ -31,6 +31,7 @@ class SpecReleaseTests(unittest.TestCase):
         for release in (
             "Release: %{krb5_release}%{?dist}\n",
             "Release: %{autorelease}\n",
+            "Release:        %autorelease -b3\n",
             "Release: %{baserelease}%{?snapdate:.%{snapdate}git%{shortcommit}}%{?dist}\n",
         ):
             self.assertEqual(spec_release(release), "")
