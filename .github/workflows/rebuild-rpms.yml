@@ -62,7 +62,29 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
+    env:
+      # The build root this factory intends to use, recorded so the choice is
+      # auditable and so Renovate keeps the digest current through the
+      # build-root-image manager in renovate.json.
+      #
+      # It is the EXPECTED value, not the pull target. quay.io/fedora/fedora:44
+      # is republished several times a day and each previous digest is
+      # garbage-collected, so a digest here is dead within hours: 3a6e77a
+      # pinned a58a82ed on 09-12, it was 404 by 09-17; the replacement
+      # 61beafd3, resolved and verified 200 at 03:50 on 09-17, was 404 by
+      # 07:13 the same morning. Fedora publishes no immutable tag -- only 44
+      # and its per-arch variants -- so there is nothing stable to pin to.
+      #
+      # Pulling by that digest is what broke run 35186196830: stages 0 to 3
+      # pulled it at 06:01 and stages 4 to 10 got
+      #   manifest for quay.io/fedora/fedora@sha256:61beafd3... not found
+      # thirty-seven jobs dead on exit 125, mid-run, from a pin that had been
+      # correct when the run started. So the tag is pulled once here and the
+      # bytes are shared with every job; a mismatch against this digest is
+      # reported, not fatal, because failing on it recreates that outage.
+      BUILDROOT_IMAGE: quay.io/fedora/fedora:44@sha256:e7d398c0a67572b33a43260102f9135ab79b6b8d95efca91faa5179d83b2cdf0
     outputs:
+      buildroot_digest: ${{ steps.buildroot.outputs.digest }}
       stage0: ${{ steps.matrix.outputs.stage0 }}
       stage1: ${{ steps.matrix.outputs.stage1 }}
       stage2: ${{ steps.matrix.outputs.stage2 }}
@@ -98,6 +120,39 @@ jobs:
           python3 -m unittest discover -s tests -v
       - name: Install zstandard
         run: pip install --quiet zstandard
+      # Pulled once for the whole run, then handed to every job as an
+      # artifact. Two things this fixes that a digest pin cannot: the image
+      # cannot rot between the pin being written and the run starting, and it
+      # cannot rot between one stage and the next -- every job provably uses
+      # the same bytes, which is a stronger reproducibility claim than the pin
+      # made. It also replaces roughly three hundred registry pulls with one.
+      - name: Pull the build root once and record what it resolved to
+        id: buildroot
+        run: |
+          tag="${BUILDROOT_IMAGE%@*}"
+          expected="${BUILDROOT_IMAGE##*@}"
+          docker pull "$tag"
+          actual=$(docker image inspect "$tag" \
+            --format '{{index .RepoDigests 0}}' | sed 's/.*@//')
+          echo "expected $expected"
+          echo "actual   $actual"
+          if [ "$actual" != "$expected" ]; then
+            echo "::warning title=build root moved::$tag now resolves to $actual, not the recorded $expected. The run continues on what it resolved to; update BUILDROOT_IMAGE to re-record it." >&2
+          fi
+          echo "digest=$actual" >> "$GITHUB_OUTPUT"
+          # A bare name, deliberately. Every job runs this image by that name
+          # with no registry behind it, so a job that failed to load the
+          # artifact cannot silently fall back to pulling something else --
+          # docker refuses an unqualified name it does not have locally.
+          docker tag "$tag" utah-buildroot:run
+          docker save utah-buildroot:run | zstd -T0 -3 -o buildroot.tar.zst
+          ls -l buildroot.tar.zst
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: buildroot-image
+          path: buildroot.tar.zst
+          if-no-files-found: error
+          retention-days: 1
       - id: matrix
         env:
           FULL: ${{ github.event_name == 'workflow_dispatch' && inputs.full == true && '1' || '0' }}
@@ -128,6 +183,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/load-buildroot
       - name: Resolve BuildRequires for packages being built
         env:
           FACTORY_REPO: ${{ vars.FACTORY_REPO }}
@@ -139,7 +195,7 @@ jobs:
             -v "$PWD/work:/work:Z" \
             -v "$PWD/packages:/packages:ro,Z" \
             -v "$PWD/config:/repos:ro,Z" \
-            quay.io/fedora/fedora:44@sha256:61beafd34111e1cb85fb49377ceadeee0a53622dbc20670ed8ca303f0e17ed9c bash -exc '
+            utah-buildroot:run bash -exc '
               disable=--disablerepo=fedora-cisco-openh264
               # The Fedora container images set tsflags=nodocs, so every %doc file is
               # dropped at install time. rand_core ships its crate docs that way and
@@ -362,6 +418,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/load-buildroot
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: rpm-*
@@ -372,7 +429,7 @@ jobs:
           docker run --rm \
             -v "$PWD/built:/built:ro,Z" \
             -v "$PWD/config:/repos:ro,Z" \
-            quay.io/fedora/fedora:44@sha256:61beafd34111e1cb85fb49377ceadeee0a53622dbc20670ed8ca303f0e17ed9c bash -exc '
+            utah-buildroot:run bash -exc '
               dnf -y install rpmdevtools >/dev/null
               cp /repos/hummingbird.repo /etc/yum.repos.d/
               disable=--disablerepo=fedora-cisco-openh264

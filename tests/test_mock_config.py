@@ -13,6 +13,11 @@ from tools.mock_config import (
 
 ROOT = Path(__file__).resolve().parent.parent
 BUILD_STAGE = ROOT / ".github" / "workflows" / "build-stage.yml"
+# Where the container path now declares its Fedora release. The build stages
+# no longer name the image at all: they run utah-buildroot:run, the bytes
+# prepare pulled once for the whole run, because pulling a pinned digest per
+# job raced quay garbage-collecting it and lost mid-run.
+REBUILD = ROOT / ".github" / "workflows" / "rebuild-rpms.yml"
 
 
 def workflow_list(variable: str) -> tuple[str, ...]:
@@ -39,9 +44,13 @@ class PolicyAgreementTests(unittest.TestCase):
         self.assertEqual(workflow_list("HB_REPO_EXCLUDE"), HUMMINGBIRD_REPO_EXCLUDE)
 
     def test_builds_against_the_same_fedora_the_container_uses(self) -> None:
+        # The invariant is unchanged -- both roots must pair Hummingbird with
+        # one Fedora release -- but the container path declares it in
+        # rebuild-rpms.yml now, as BUILDROOT_IMAGE, rather than at each of the
+        # four places that used to name the image.
         self.assertIn(
-            f"fedora:{FEDORA_RELEASEVER}",
-            BUILD_STAGE.read_text(),
+            f"fedora:{FEDORA_RELEASEVER}@sha256:",
+            REBUILD.read_text(),
             "the mock root and the container must pair Hummingbird with the "
             "same Fedora",
         )
