@@ -56,11 +56,17 @@ class PackitSrpmTests(unittest.TestCase):
         # already died that way: 149e6e06 (repinned by 15a9dd5) and 8a178425,
         # which was 404 by 2026-09-17. Assert the shape, and keep both known
         # dead digests out.
+        # tag@digest, not a bare digest: Renovate cannot tell what a digest-only
+        # pin should track, so the tag is what lets the build-root-image manager
+        # in renovate.json keep it fresh. It is still digest-pinned -- the
+        # runtime resolves by digest when one is present, which is the form the
+        # repository's own Containerfiles already use.
         self.assertRegex(
             workflow,
-            r"quay\.io/packit/packit@sha256:[0-9a-f]{64}",
+            r"quay\.io/packit/packit:[\w.-]+@sha256:[0-9a-f]{64}",
         )
-        self.assertNotRegex(workflow, r"quay\.io/packit/packit:[\w.-]+")
+        # What AGENTS.md forbids is a tag with no digest behind it.
+        self.assertNotRegex(workflow, r"quay\.io/packit/packit:[\w.-]+(?!@sha256:)\s")
         for dead in (
             "149e6e06d3e5fb2f10d19760c8a0031c7d8825e7bb91a5f4a7ab9b927c947494",
             "8a1784251c51eed7a094820c894e2ee7f4ed4bbce4eb78eb172a04de3fae43e1",
