@@ -48,14 +48,24 @@ class PackitSrpmTests(unittest.TestCase):
         self.assertRegex(workflow, r"(?m)^  push:\n    branches: \[main\]$")
         self.assertIn("create-archive:", PACKIT_CONFIG.read_text())
         self.assertIn("tools/packit_source0.py", PACKIT_CONFIG.read_text())
-        self.assertIn(
-            "quay.io/packit/packit@sha256:8a1784251c51eed7a094820c894e2ee7f4ed4bbce4eb78eb172a04de3fae43e1",
+        # The invariant AGENTS.md states is "pinned by digest, never a mutable
+        # tag" -- not one specific digest. quay.io/packit/packit publishes only
+        # :latest and republishes it, garbage-collecting the digest it replaces,
+        # so a hardcoded digest here is a test that fails on upstream's
+        # schedule rather than on a change to this repository. Two pins have
+        # already died that way: 149e6e06 (repinned by 15a9dd5) and 8a178425,
+        # which was 404 by 2026-09-17. Assert the shape, and keep both known
+        # dead digests out.
+        self.assertRegex(
             workflow,
+            r"quay\.io/packit/packit@sha256:[0-9a-f]{64}",
         )
-        self.assertNotIn(
+        self.assertNotRegex(workflow, r"quay\.io/packit/packit:[\w.-]+")
+        for dead in (
             "149e6e06d3e5fb2f10d19760c8a0031c7d8825e7bb91a5f4a7ab9b927c947494",
-            workflow,
-        )
+            "8a1784251c51eed7a094820c894e2ee7f4ed4bbce4eb78eb172a04de3fae43e1",
+        ):
+            self.assertNotIn(dead, workflow)
 
 
     def test_every_chunk_fits_inside_the_matrix_cap(self) -> None:
