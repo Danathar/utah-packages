@@ -562,7 +562,20 @@ ln -s ../pipewire.conf.avail/50-raop.conf \
 %find_lang %{name}
 
 %check
-%meson_test || TESTS_ERROR=$?
+# Serialized. pw-test-endpoint fails as "killed by signal 14 SIGALRM" at 5.01s
+# because src/tests/test-endpoint.c:441 arms its own watchdog:
+#
+#     alarm(5); /* watchdog; terminate after 5 seconds */
+#
+# before driving five sequential pw_main_loop_run round trips through a real
+# context with the session-manager modules loaded. That budget is the test's
+# own, inside the binary, so --timeout-multiplier cannot move it -- meson never
+# gets to apply a timeout, the process kills itself first. The lever that does
+# work is not starving it: 52 tests in parallel on a 4-vCPU runner is what
+# pushes a 5-second handshake past 5 seconds. 51 of 52 passed, and nothing is
+# skipped or made non-fatal here -- the same suite runs, one process at a time.
+# Same approach as e6cf24a took for librsvg2's remaining suites.
+%meson_test --num-processes 1 || TESTS_ERROR=$?
 if [ "${TESTS_ERROR}" != "" ]; then
 echo "test failed"
 %{!?tests_nonfatal:exit $TESTS_ERROR}
