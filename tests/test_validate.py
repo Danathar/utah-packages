@@ -45,7 +45,7 @@ class ValidateScriptTests(unittest.TestCase):
         root: Path,
         *,
         packages=("example",),
-        provenance=None,
+        provenance=RAWHIDE_PROVENANCE,
         locked=None,
         packit=None,
     ) -> None:
@@ -94,10 +94,10 @@ class ValidateScriptTests(unittest.TestCase):
         assert result.returncode == 0, result.stderr
         assert "validated 1 source RPMs" in result.stdout
 
-    def test_accepts_a_package_that_carries_no_provenance_file(self) -> None:
+    def test_rejects_a_package_that_carries_no_provenance_file(self) -> None:
         result = self.check(provenance=None)
-        assert result.returncode == 0, result.stderr
-        assert "validated 1 source RPMs" in result.stdout
+        assert result.returncode != 0
+        assert "missing upstream provenance" in result.stderr
 
     def test_rejects_provenance_missing_a_required_key(self) -> None:
         incomplete = {k: v for k, v in RAWHIDE_PROVENANCE.items() if k != "imported_at"}
@@ -162,6 +162,12 @@ class ValidateScriptTests(unittest.TestCase):
         )
         assert result.returncode == 0, result.stderr
         assert "validated 3 source RPMs" in result.stdout
+
+    def test_returns_zero_when_packages_directory_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_validate(root)
+            assert result.returncode == 0, result.stderr
 
     def test_the_checked_in_factory_tree_passes_its_own_gate(self) -> None:
         result = self.run_validate(ROOT)

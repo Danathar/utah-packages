@@ -34,6 +34,20 @@
 %bcond_without jack
 %endif
 
+# The ONNX filter-chain module is off everywhere in this factory, for the same
+# reason 718d4e4 declined it in gstreamer1-plugins-bad-free:
+#
+#     onnxruntime-devel-1.22.2-2.fc44 requires libabsl_hash.so.2601.0.0, but
+#       none of the providers can be installed
+#       - abseil-cpp-20260107.1-1.fc44 from fedora is filtered out by exclude
+#
+# Fedora's onnxruntime links the soname of Fedora's abseil-cpp 20260107.1; this
+# factory builds abseil-cpp 20260526.0 and excludes the Fedora copy by name, so
+# that BuildRequires can never be satisfied here. It is a permanent conflict,
+# not a bootstrap phase. Nothing in the runtime contract runs ML inference
+# through PipeWire's filter chain.
+%bcond_with onnx
+
 # Features disabled for RHEL
 %if 0%{?rhel}
 %bcond_with jackserver_plugin
@@ -41,7 +55,6 @@
 %bcond_with lv2
 %bcond_with roc
 %bcond_with ffado
-%bcond_with onnx
 %else
 %bcond_without jackserver_plugin
 %bcond_without libmysofa
@@ -49,13 +62,10 @@
 %bcond_without roc
 %ifarch s390x
 %bcond_with ffado
-%bcond_with onnx
 %elifarch %{ix86}
 %bcond_without ffado
-%bcond_with onnx
 %else
 %bcond_without ffado
-%bcond_without onnx
 %endif
 %endif
 
@@ -552,7 +562,20 @@ ln -s ../pipewire.conf.avail/50-raop.conf \
 %find_lang %{name}
 
 %check
-%meson_test || TESTS_ERROR=$?
+# Serialized. pw-test-endpoint fails as "killed by signal 14 SIGALRM" at 5.01s
+# because src/tests/test-endpoint.c:441 arms its own watchdog:
+#
+#     alarm(5); /* watchdog; terminate after 5 seconds */
+#
+# before driving five sequential pw_main_loop_run round trips through a real
+# context with the session-manager modules loaded. That budget is the test's
+# own, inside the binary, so --timeout-multiplier cannot move it -- meson never
+# gets to apply a timeout, the process kills itself first. The lever that does
+# work is not starving it: 52 tests in parallel on a 4-vCPU runner is what
+# pushes a 5-second handshake past 5 seconds. 51 of 52 passed, and nothing is
+# skipped or made non-fatal here -- the same suite runs, one process at a time.
+# Same approach as e6cf24a took for librsvg2's remaining suites.
+%meson_test --num-processes 1 || TESTS_ERROR=$?
 if [ "${TESTS_ERROR}" != "" ]; then
 echo "test failed"
 %{!?tests_nonfatal:exit $TESTS_ERROR}
