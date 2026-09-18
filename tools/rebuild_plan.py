@@ -98,9 +98,11 @@ def expected_release(root: Path, entry: dict) -> str | None:
         return None
     try:
         release = spec_release(specs[0].read_text())
-        return release + suffix(entry, release)
     except (BumpError, OSError):
         return None
+    if release is None:
+        return None
+    return release + suffix(entry, release)
 
 
 def is_published(root: Path, entry: dict, published: dict[str, tuple[str, str]]) -> bool:
