@@ -1,0 +1,99 @@
+name: Bump GNOME source locks
+
+# Opens one reviewable PR when a GNOME module this factory tracks ships a
+# release inside the cycle its lock already names -- the 51.beta to 51.0 move,
+# which nothing here does today. renovate.json has a custom manager aimed at
+# config/upstream-sources.json, but it keys on datasource and depName and no
+# entry carries those, so it has never matched. Renovate could not finish the
+# job anyway: a version lives in three files here and only one of them is JSON,
+# and the tarball's SHA-512 has to be computed from the bytes.
+#
+# Deliberately proposes, never merges. The bump changes what the factory
+# builds, so it goes through the same review and the same eleven-stage run as
+# any other recipe change.
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Limit the run to a single package (default: every GNOME-hosted lock)"
+        required: false
+        type: string
+  schedule:
+    # Away from the top of the hour, where scheduled jobs are commonly delayed.
+    - cron: '41 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gnome-source-bump
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Report first, unconditionally, so the run's log says what was
+      # considered even when nothing is written -- including the cross-cycle
+      # candidates the tool refuses to apply on its own.
+      - name: Report what GNOME has released
+        run: |
+          python3 tools/upstream_bump.py ${PACKAGE:+--package "$PACKAGE"}
+        env:
+          PACKAGE: ${{ inputs.package }}
+
+      - name: Rewrite the locks, specs and source manifests
+        run: |
+          python3 tools/upstream_bump.py --apply ${PACKAGE:+--package "$PACKAGE"}
+        env:
+          PACKAGE: ${{ inputs.package }}
+
+      # The same gates a contributor runs. A bump that cannot pass these is a
+      # bump nobody should be asked to review.
+      - name: Validate the result
+        run: |
+          python3 -m unittest discover -s tests -q
+          python3 tools/validate.py
+          python3 tools/check_workflow_quoting.py
+
+      # Proves the rewritten locks actually resolve and that each recorded
+      # SHA-512 matches the bytes upstream serves, rather than trusting the
+      # digest this workflow just computed.
+      - name: Re-verify every rewritten source against its new checksum
+        run: |
+          python3 tools/source_pipeline.py \
+            --output work/sources \
+            --report-dir work/reports
+
+      - name: Open reviewable update
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        with:
+          branch: bump/gnome-sources
+          delete-branch: true
+          title: 'chore(sources): bump GNOME locks to their released versions'
+          commit-message: 'chore(sources): bump GNOME locks to their released versions'
+          body: |
+            Opened by `.github/workflows/bump-gnome-sources.yml`.
+
+            Each package below had its `Version:`, its `sources` manifest and
+            its `config/upstream-sources.json` entry rewritten together, with
+            the SHA-512 computed from the tarball GNOME actually serves. The
+            run log lists what moved, and any candidate that crosses a release
+            cycle -- those are reported for a human and never applied, because
+            GNOME's numbering encodes development series that no arithmetic
+            rule separates from stable ones.
+
+            Verified in the run before this PR was opened: the unit tests,
+            `tools/validate.py`, the workflow quoting check, and
+            `tools/source_pipeline.py`, which re-downloads every rewritten
+            source and rejects a digest that does not match.
+
+            **Not verified: the build.** A GNOME major bump usually needs spec
+            patch refreshes, and this is a large rebuild. That is what this
+            PR's own factory run is for.

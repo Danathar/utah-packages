@@ -1,18 +1,39 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "automerge": false,
   "packageRules": [
     {
       "description": "Keep the GitHub Actions supply chain patched automatically.",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["digest", "patch", "minor"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "patch",
+        "minor"
+      ],
       "automerge": true,
       "platformAutomerge": true
     },
     {
       "description": "Direct upstream RPM sources may merge only after their real build and verification gate succeeds.",
-      "matchDepTypes": ["upstream-source"],
+      "matchDepTypes": [
+        "upstream-source"
+      ],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "description": "A build-root image digest may move on its own: a rotted pin fails every job in the run, and the replacement is whatever the pinned tag already resolves to. Digest only -- a new Fedora major is a deliberate decision.",
+      "matchDepTypes": [
+        "build-root-image"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
       "automerge": true,
       "platformAutomerge": true
     }
@@ -28,6 +49,18 @@
         "\\\"name\\\":\\s*\\\"[^\\\"]+\\\"\\s*,\\s*\\\"version\\\":\\s*\\\"(?<currentValue>[^\\\"]+)\\\"(?:.|\\n)*?\\\"datasource\\\":\\s*\\\"(?<datasource>[^\\\"]+)\\\"\\s*,\\s*\\\"depName\\\":\\s*\\\"(?<depName>[^\\\"]+)\\\""
       ],
       "depTypeTemplate": "upstream-source"
+    },
+    {
+      "customType": "regex",
+      "description": "Container images named inside a workflow run: script. Renovate's docker manager reads Dockerfiles, container: and services:, none of which covers an image passed to docker run in a shell line -- so these pins were tracked by nothing and rotted twice in a week, each time taking every job in the run down with exit 125 before a line of its script ran (quay.io/fedora/fedora, and quay.io/packit/packit on two separate digests). The tag is written alongside the digest so this can resolve what to track: fedora follows :44, not :latest.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?<depName>quay\\.io/[^:@\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "depTypeTemplate": "build-root-image"
     }
   ]
 }

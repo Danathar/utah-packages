@@ -35,7 +35,15 @@ def check_provenance(path: Path, data: dict) -> None:
 
 
 def main(root: Path = Path(".")) -> int:
-    for path in (root / "packages").glob("*/.hummingbird-upstream.json"):
+    packages_dir = root / "packages"
+    if not packages_dir.is_dir():
+        return 0
+    for directory in sorted(packages_dir.iterdir()):
+        if not directory.is_dir():
+            continue
+        path = directory / ".hummingbird-upstream.json"
+        if not path.is_file():
+            raise SystemExit(f"missing upstream provenance: {path}")
         data = json.loads(path.read_text())
         check_provenance(path, data)
     records = inventory(root)
