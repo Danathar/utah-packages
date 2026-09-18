@@ -1,0 +1,29 @@
+name: Load the shared build root
+description: >
+  Restore the container image prepare pulled once for this run, so no job
+  touches a registry mid-build.
+
+  quay.io/fedora/fedora:44 is republished several times a day and each previous
+  digest is garbage-collected, so every job pulling it by digest was a race
+  against that: run 35186196830 had stages 0 to 3 pull successfully at 06:01
+  and stages 4 to 10 die on exit 125 at 07:13, from a pin that was correct when
+  the run began. One pull per run, shared as an artifact, removes the race and
+  makes every job provably use the same bytes.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      with:
+        name: buildroot-image
+    - name: Load and verify the build root is present
+      shell: bash
+      run: |
+        zstd -d -c buildroot.tar.zst | docker load
+        # The image is named without a registry on purpose, so nothing can
+        # substitute a fresh pull for it. Assert it arrived rather than
+        # discovering it missing inside a docker run that then reaches out.
+        docker image inspect utah-buildroot:run >/dev/null
+        docker image inspect utah-buildroot:run \
+          --format 'build root loaded: {{index .RepoTags 0}} {{.Id}}'
+        rm -f buildroot.tar.zst
