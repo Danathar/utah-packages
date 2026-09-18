@@ -119,7 +119,7 @@ jobs:
             config/bluefin-packages.toml config/runtime-contract.toml --check
           python3 -m unittest discover -s tests -v
       - name: Install zstandard
-        run: pip install --quiet zstandard
+        run: pip install --disable-pip-version-check --quiet 'zstandard==0.25.0'
       # Pulled once for the whole run, then handed to every job as an
       # artifact. Two things this fixes that a digest pin cannot: the image
       # cannot rot between the pin being written and the run starting, and it
