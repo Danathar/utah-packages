@@ -27,14 +27,14 @@ class SpecReleaseTests(unittest.TestCase):
 
     def test_returns_no_release_for_a_purely_macro_release(self) -> None:
         # %autorelease, %{baserelease}, krb5's %{krb5_release}: no literal
-        # segment to compare, so the bump is skipped (""), not crashed on.
+        # segment to compare, so the bump is skipped (None), not crashed on.
         for release in (
             "Release: %{krb5_release}%{?dist}\n",
             "Release: %{autorelease}\n",
             "Release:        %autorelease -b3\n",
             "Release: %{baserelease}%{?snapdate:.%{snapdate}git%{shortcommit}}%{?dist}\n",
         ):
-            self.assertEqual(spec_release(release), "")
+            self.assertIsNone(spec_release(release))
 
     def test_reports_a_spec_with_no_release(self) -> None:
         with self.assertRaises(BumpError):

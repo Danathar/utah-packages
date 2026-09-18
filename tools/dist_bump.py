@@ -54,18 +54,18 @@ class BumpError(Exception):
     """The recorded bump cannot be applied to this spec."""
 
 
-def spec_release(spec: str) -> str:
-    """The comparable leading release, or the empty string when the spec
-    cannot be bumped.
+def spec_release(spec: str) -> str | None:
+    """The comparable leading release, or None when the spec cannot be bumped.
 
     The release is the literal segment before the first unexpanded macro -- the
     `5` in `5%{?gitdate:.%{gitdate}git%{gitversion}}%{?dist}` and the `1` in
     `1%{?pre_tag}%{?dist}`. That literal is stable across rebuilds of the same
     Fedora release, so it is what a recorded baseline can be checked against.
     A release that is only macros -- `%autorelease`, `%{baserelease}` -- has no
-    literal segment to compare, so this returns the empty string and the caller
-    skips the bump instead of guessing at (or crashing on) two strings that do
-    not mean what they appear to.
+    literal segment to compare, so this returns None and the caller skips the
+    bump instead of guessing at (or crashing on) two strings that do not mean
+    what they appear to. None rather than "" because tools/rebuild_plan.py
+    reads the same function and treats None as "no comparable release".
     """
     match = RELEASE.search(spec)
     if match is None:
@@ -73,7 +73,7 @@ def spec_release(spec: str) -> str:
     # The dist macro and every optional sub-macro sit after the first `%`, so
     # the literal release is everything before it. A (\S+) capture carries no
     # whitespace, so nothing further needs stripping.
-    return match.group(1).split("%", 1)[0]
+    return match.group(1).split("%", 1)[0] or None
 
 
 def suffix(entry: dict, release: str) -> str:
