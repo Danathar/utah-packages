@@ -48,6 +48,14 @@ The image manifest (`config/bluefin-packages.toml`) and
 image still wants the package, it just resolves from Hummingbird now. Re-add by
 reversing `Import Rawhide package`.
 
+Leaving one of these behind is what makes `main` red: the other three sources
+end up at different set sizes, which surfaces later as an unrelated failing
+integer assertion instead of as "you forgot `config/upstream-sources.json`".
+`tests/test_recipe_set_agreement.py` catches that by asserting
+`packages/`, `config/upstream-sources.json`, and `.packit.yaml` describe the
+same set of names and reporting the difference by name, so an incomplete
+removal fails legibly.
+
 ## Before you commit
 
 ```sh
