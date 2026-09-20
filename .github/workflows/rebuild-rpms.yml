@@ -831,11 +831,18 @@ jobs:
               fi
               echo "Hummingbird-only consumer transaction resolves ${#packages[@]} packages"
             '
+      # build_list is a workflow expression, so it goes through env: and is
+      # read as "$BUILD_LIST", the way preflight already passes it. Inlined
+      # in run: it would be substituted before bash parses the script, and a
+      # quote in a package directory name would end the argument early in a
+      # job that holds packages: write and id-token: write.
       - name: Emit factory manifest before container build
+        env:
+          BUILD_LIST: ${{ needs.prepare.outputs.build_list }}
         run: |
           python3 tools/factory_manifest.py \
             --repository repository \
-            --build-list '${{ needs.prepare.outputs.build_list }}' \
+            --build-list "$BUILD_LIST" \
             --buildroot-lock config/buildroot-lock.json \
             --output repository/manifest.json
       # The repository as an OCI image, which is how everything else in this
@@ -918,14 +925,18 @@ jobs:
           subject-digest: ${{ steps.oci.outputs.digest }}
           push-to-registry: true
       - name: Record published OCI digest in factory manifest
+        env:
+          BUILD_LIST: ${{ needs.prepare.outputs.build_list }}
+          OCI_REF: ${{ steps.oci.outputs.ref }}
+          OCI_DIGEST: ${{ steps.oci.outputs.digest }}
         run: |
           python3 tools/factory_manifest.py \
             --repository repository \
-            --build-list '${{ needs.prepare.outputs.build_list }}' \
+            --build-list "$BUILD_LIST" \
             --buildroot-lock config/buildroot-lock.json \
             --output repository/manifest.json \
-            --oci-ref "${{ steps.oci.outputs.ref }}" \
-            --oci-digest "${{ steps.oci.outputs.digest }}"
+            --oci-ref "$OCI_REF" \
+            --oci-digest "$OCI_DIGEST"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: factory-manifest

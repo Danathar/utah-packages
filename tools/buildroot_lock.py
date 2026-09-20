@@ -11,6 +11,10 @@ The package list comes from ``rpm -qa`` here, or from ``--packages-from`` when
 that inventory was printed elsewhere; CI uses the second form, because the
 build root is a Fedora container with no interpreter this factory may assume.
 
+The lock is never used as the resolved image: with no ``--image``,
+``--digest`` or ``BUILDROOT_DIGEST`` the snapshot records ``image: null`` and
+warns, so an empty digest cannot quietly re-assert the lock's provenance.
+
 A mismatch between the resolved and locked image warns, matching the workflow:
 ``quay.io/fedora/fedora:44`` is republished several times a day and failing on
 a moved tag is the outage `docs/skills/repeated-mistakes.md` section 7 records.
@@ -127,12 +131,16 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     locked_image = spec["image"]
     base_ref = locked_image.split("@")[0]
     digest = getattr(args, "digest", None) or os.environ.get("BUILDROOT_DIGEST")
+    # Only what the run resolved counts as the image. The lock is never a
+    # fallback: it says which bytes the rebuild meant to use, and writing it
+    # here would attest a root the packages may not have been built in. With
+    # nothing resolved the snapshot records null and says so.
     actual_image = (
         getattr(args, "image", None)
         or (f"{base_ref}@{digest}" if digest else None)
         or os.environ.get("ACTUAL_BUILDROOT_IMAGE")
         or os.environ.get("BUILDROOT_IMAGE")
-        or locked_image
+        or None
     )
     payload = {
         "schema": 1,
@@ -146,7 +154,16 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     expected = spec.get("packages", [])
     errors = []
-    if actual_image != locked_image:
+    if actual_image is None:
+        msg = (
+            f"buildroot image unknown: no --image, --digest or BUILDROOT_DIGEST was given, "
+            f"so the snapshot records image null rather than the lock's {locked_image}"
+        )
+        if args.strict:
+            errors.append(msg)
+        else:
+            print(f"warning: {msg}", file=sys.stderr)
+    elif actual_image != locked_image:
         msg = f"buildroot image mismatch: lock specifies {locked_image}, actual running image is {actual_image}"
         if args.strict:
             errors.append(msg)

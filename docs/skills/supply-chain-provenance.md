@@ -28,7 +28,10 @@ consumes are decoration, so do not add one ahead of its caller.
 - `snapshot <name> --output <path>` writes every package NEVRA in the root,
   the digest the run resolved (`image`), and the digest the lock expected
   (`locked_image`). `--packages-from <file>` reads `rpm -qa` output captured
-  elsewhere instead of running `rpm` here.
+  elsewhere instead of running `rpm` here. The lock is never used as the
+  resolved image: with no `--image`, `--digest` or `BUILDROOT_DIGEST` the
+  snapshot records `image: null` and warns, so an empty digest cannot quietly
+  re-assert the lock's provenance.
 - `--strict` turns a digest mismatch, and any divergence from a non-empty
   locked package list, into a failure.
 

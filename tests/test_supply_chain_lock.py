@@ -116,6 +116,7 @@ class BuildrootLockTests(unittest.TestCase):
                 rc = buildroot_main([
                     "--config", str(lock),
                     "snapshot", "fedora-44",
+                    "--digest", "sha256:" + "c" * 64,
                     "--output", str(out),
                     "--strict",
                 ])
@@ -124,6 +125,75 @@ class BuildrootLockTests(unittest.TestCase):
                 self.assertEqual(data["schema"], 1)
                 self.assertEqual(data["name"], "fedora-44")
                 self.assertEqual(data["packages"], fake_pkgs)
+
+    def test_cmd_snapshot_records_null_image_when_no_digest_was_resolved(self) -> None:
+        # An empty BUILDROOT_DIGEST used to fall through to the lock's own
+        # digest, so the snapshot attested exactly the provenance it exists to
+        # check. Now nothing resolved means image null, with a warning; the
+        # lock stays in locked_image where it belongs.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "lock.json"
+            locked_img = "quay.io/fedora/fedora:44@sha256:" + "c" * 64
+            lock.write_text(
+                json.dumps({
+                    "schema": 1,
+                    "buildroots": {"fedora-44": {"image": locked_img, "packages": []}},
+                })
+            )
+            inventory = root / "buildroot.rpms"
+            inventory.write_text("glibc\t2.41-1.fc44\tx86_64\n")
+            out = root / "snapshot.json"
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr):
+                rc = buildroot_main([
+                    "--config", str(lock),
+                    "snapshot", "fedora-44",
+                    "--packages-from", str(inventory),
+                    "--digest", "",
+                    "--output", str(out),
+                ])
+            self.assertEqual(rc, 0)
+            data = json.loads(out.read_text())
+            self.assertIsNone(data["image"])
+            self.assertEqual(data["locked_image"], locked_img)
+            self.assertIn("buildroot image unknown", stderr.getvalue())
+            self.assertNotIn(locked_img, json.dumps(data["image"]))
+
+    def test_cmd_snapshot_strict_refuses_an_unknown_image(self) -> None:
+        # --strict is the operator asking whether the root is exactly what was
+        # locked. With no resolved image that question has no answer, so it
+        # fails rather than passing on the lock's own digest.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "lock.json"
+            lock.write_text(
+                json.dumps({
+                    "schema": 1,
+                    "buildroots": {
+                        "fedora-44": {
+                            "image": "quay.io/fedora/fedora:44@sha256:" + "c" * 64,
+                            "packages": [],
+                        }
+                    },
+                })
+            )
+            inventory = root / "buildroot.rpms"
+            inventory.write_text("glibc\t2.41-1.fc44\tx86_64\n")
+            out = root / "snapshot.json"
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr):
+                rc = buildroot_main([
+                    "--config", str(lock),
+                    "snapshot", "fedora-44",
+                    "--packages-from", str(inventory),
+                    "--output", str(out),
+                    "--strict",
+                ])
+            self.assertEqual(rc, 1)
+            self.assertIn("buildroot image unknown", stderr.getvalue())
+            # The snapshot is still written, with the honest null.
+            self.assertIsNone(json.loads(out.read_text())["image"])
 
     def test_cmd_snapshot_strict_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
