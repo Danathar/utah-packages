@@ -634,14 +634,22 @@ jobs:
       # on `python3: can't open file .../tools/runtime_contract.py` the moment
       # the seed step stopped failing first and let it get that far.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install cosign
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64 -o cosign
+          echo '8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b  cosign' | sha256sum -c -
+          sudo install -m 0755 cosign /usr/local/bin/cosign
       - name: Verify and seed repository from the prepare-time factory image
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXPECTED_IMAGE: ${{ needs.prepare.outputs.factory_image }}
+          REPOSITORY: ${{ github.repository }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           REF_NAME: ${{ github.ref_name }}
           REF: ${{ github.ref }}
           ACTOR: ${{ github.actor }}
+          DOCKER_CONFIG: ${{ runner.temp }}/.docker
         run: |
           set -euo pipefail
           owner=$(printf '%s' "$REPOSITORY_OWNER" | tr "[:upper:]" "[:lower:]")
@@ -653,14 +661,30 @@ jobs:
           else
             candidates="$branch latest"
           fi
-          mkdir -p repository
-          echo "${GITHUB_TOKEN}" | podman login ghcr.io -u "$ACTOR" --password-stdin
+          mkdir -p repository "${DOCKER_CONFIG}"
+          # cosign verify below reads the Docker config, not podman's own
+          # auth file (the same split the "Publish the repository" step
+          # already works around), so the login has to land where cosign
+          # will look, even though the package is public and every pull
+          # here succeeds anonymously either way.
+          echo "${GITHUB_TOKEN}" | podman login ghcr.io -u "$ACTOR" \
+            --password-stdin --authfile "${DOCKER_CONFIG}/config.json"
           current=
+          current_ref=
           for tag in $candidates; do
-            if podman pull "${image}:${tag}"; then
+            if podman pull --authfile "${DOCKER_CONFIG}/config.json" "${image}:${tag}"; then
               digest=$(podman image inspect "${image}:${tag}" \
                 --format '{{index .RepoDigests 0}}' | sed 's/.*@//')
               current="${image}@${digest}"
+              # latest is only ever published from main; a branch tag is only
+              # ever published by this same workflow running on that branch.
+              # Recording which one matched lets verification below pin the
+              # exact signer identity instead of accepting either.
+              if [ "$tag" = "latest" ]; then
+                current_ref="refs/heads/main"
+              else
+                current_ref="$REF"
+              fi
               echo "current factory image: ${image}:${tag} -> ${current}"
               break
             fi
@@ -676,6 +700,16 @@ jobs:
           if [ -z "$current" ]; then
             echo "prepare witnessed no published image; publishing a new repository"
           else
+            # The seed image is only trustworthy if this workflow signed it.
+            # Verify the digest actually pulled -- never the mutable tag,
+            # which could move again after this check -- before creating a
+            # container or copying anything out of it. Without this, anyone
+            # able to push to the GHCR package once could plant RPMs in
+            # :latest and have every subsequent run copy them forward, sign
+            # over them, and re-publish them as verified factory output.
+            cosign verify "$current" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity "https://github.com/${REPOSITORY}/.github/workflows/rebuild-rpms.yml@${current_ref}"
             # The factory image is FROM scratch with one COPY and no CMD or
             # ENTRYPOINT, so a bare create exits 125 with "no command or
             # entrypoint provided". A command is only recorded here, never run
@@ -733,7 +767,7 @@ jobs:
           createrepo_c --update repository
           curl -fsSL https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64 -o cosign
           echo '8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b  cosign' | sha256sum -c -
-          install -m 0755 cosign /usr/local/bin/cosign
+          sudo install -m 0755 cosign /usr/local/bin/cosign
           cosign sign-blob --yes --bundle repository/repodata/repomd.xml.bundle repository/repodata/repomd.xml
       - name: Validate Hummingbird-only consumer transaction
         run: |

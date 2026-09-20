@@ -178,6 +178,7 @@ When a later stage cannot see what an earlier stage built, check in this order:
 | Exit **125**, log under ~1 KB (transient) | `docker run` failed before the build; infrastructure | Not the package. Re-run once at most |
 | `Signature verification failed` after a clean download | The repo's `gpgkey` is a multi-key bundle and one key in it fails to import | Point `gpgkey` at the single release key. Verify its fingerprint against the one the failing transaction named. **Keep `gpgcheck=1`** |
 | `wrong key?` on a third-party repo whose content the build does not need | A repo signed by a key the image does not trust | Disable that repo for the build |
+| `cosign verify` fails in `publish`'s "Verify and seed repository" step | The image at `:latest` (or the branch tag) is not signed by this workflow's own keyless OIDC identity -- either GHCR served a tampered image, or the certificate-identity ref (`refs/heads/main` for `latest`, the branch ref otherwise) no longer matches how `Sign the published image` signs | **Do not weaken or drop the check to unblock a run.** Confirm who/what pushed to the GHCR package outside this workflow; if the identity itself is wrong, fix the `--certificate-identity` construction, not the fact that it is enforced |
 
 ## Verify against primary sources
 
