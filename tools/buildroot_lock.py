@@ -177,7 +177,10 @@ def main(argv: list[str] | None = None) -> int:
     snapshot.add_argument(
         "--packages-from",
         type=Path,
-        help=f"read rpm -qa --qf {QUERY_FORMAT!r} output instead of running rpm",
+        # argparse %-formats help text, so the rpm query's own % signs must
+        # be doubled or the parser refuses the string (eagerly on 3.14+).
+        help="read rpm -qa --qf %s output instead of running rpm"
+        % repr(QUERY_FORMAT).replace("%", "%%"),
     )
     snapshot.add_argument("--image", help="actual image/digest of the running buildroot")
     snapshot.add_argument("--digest", help="actual digest of the running buildroot")

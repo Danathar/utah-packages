@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,20 @@ from tools.source_pipeline import main as source_pipeline_main
 
 
 class BuildrootLockTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # The prepare job exports BUILDROOT_IMAGE for the whole job and runs
+        # these tests inside it, and cmd_snapshot reads that variable as the
+        # running image when no --image/--digest is given. Strip the
+        # factory's variables so the tests see only what they pass.
+        isolated = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"BUILDROOT_IMAGE", "ACTUAL_BUILDROOT_IMAGE", "BUILDROOT_DIGEST"}
+        }
+        patcher = patch.dict(os.environ, isolated, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_compare_detects_missing_and_unexpected_packages(self) -> None:
         expected = [
             {"nevra": "glibc-2.41-1.fc44.x86_64"},
