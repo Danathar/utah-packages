@@ -148,6 +148,16 @@ Hummingbird repository separately, and compares their union to Bluefin's
 package contract. Its artifact distinguishes packages already installed in the
 base image, packages newly available from the repository, and genuine gaps.
 
+The contract measured here is deliberately narrower than the Bluefin manifest:
+packages listed under `[unavailable]` in
+[`config/runtime-contract.toml`](config/runtime-contract.toml) are subtracted
+before the comparison. Each of those entries is an issue-backed decision that
+Utah stopped shipping the package, so it is not parity debt Hummingbird owes
+and it never appears in `missing_from_hummingbird`. The artifact records the
+subtraction explicitly in `excluded_as_unavailable` (and
+`counts.excluded_as_unavailable`), so read that field before concluding a
+package is absent from the report by mistake.
+
 ## Rawhide bootstrap policy
 
 Fedora Rawhide is permitted only inside an isolated buildroot: it supplies the
