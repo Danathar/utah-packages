@@ -51,6 +51,25 @@ BuildRequires" (it was a single missing package we build ourselves), and
 "libratbag has no Fedora fix" (its actual failure had moved to a missing
 D-Bus session). Both reversed once the full log was read.
 
+### The job name in the run list is the chunk, not the package
+
+A stage is split into chunks, so the Actions UI renders a failure as
+
+```
+rebuild6 (["gnome-desktop3", "libadwaita", ...]) / build (nautilus-python)
+```
+
+The name in the matrix brackets is the chunk's **first** package. The package
+that failed is the one in the trailing `build (...)`. Issue #212 was filed as
+"fix gnome-desktop3" from the bracketed name; gnome-desktop3 had built fine in
+that very run and the failure was `nautilus-python`. Before triaging, confirm
+which package it is:
+
+```sh
+gh api repos/projectbluefin/utah-packages/actions/runs/<run>/jobs --paginate \
+  --jq '.jobs[] | select(.conclusion=="failure") | "\(.id)\t\(.name)"'
+```
+
 ## Rule 1: confirm which build root ran
 
 Every job prints this before `builddep`:
@@ -149,6 +168,7 @@ When a later stage cannot see what an earlier stage built, check in this order:
 | --- | --- | --- |
 | `No match for argument: <pkg>` where `<pkg>` is in `config/upstream-sources.json` | Build ordering. The matrix has not built it yet. | Raise its `stage` in `upstream-sources.json` above the package that needs it |
 | `Found X but need: '>= Y'` where the package is one of ours | Same — ordering, not a missing dependency | As above |
+| `Failed to resolve the transaction`, naming a Fedora package that a same-stage recipe BuildRequires and an earlier stage's output in the same chain | Ordering again, with no `No match` line to give it away. The earlier stage's RPM is excluded from Fedora by name and pins a soname (ICU is the recurring one), so Fedora's copy of the *same-stage* package can no longer install | Raise the consumer's `stage` above the package it BuildRequires, and add the pair to `tests/test_icu_staging.py` |
 | `No match for argument: <pkg>` where `<pkg>` is a Fedora package | Genuine gap: Fedora predates what the source needs | Import and pin it, like `wayland-protocols` and `accountsservice` |
 | Error inside `/usr/share/cargo/registry/...` or another Fedora-packaged dependency | Fedora packaging bug | Verify it affects more than one Fedora release before calling it release-specific. Do not work around it in the spec |
 | `Bad exit status ... (%check)` needing a bus, display or device | The container lacks a service the test needs | Give the container the service. **Never** skip or disable the test |
