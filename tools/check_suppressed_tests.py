@@ -36,6 +36,29 @@ gate -- the prose above would still say "not permission to add more" while the
 code said otherwise. Pinning the count makes both directions fail: a definition
 appearing beyond the recorded number, and the recorded number outliving the
 import that earned it.
+
+What this gate does **not** catch
+---------------------------------
+
+It matches one evasion: a ``%global``/``%define tests_nonfatal`` line in a
+``packages/<name>/<name>.spec``. That is the one that was about to be written
+for #132, and it is the one a rushed author reaches for -- it is not the only
+way to land a green build on a failing suite. A recipe can still:
+
+* delete the ``%{!?tests_nonfatal:exit $TESTS_ERROR}`` guard, leaving a
+  ``%check`` that prints ``test failed`` and exits 0 -- no macro required;
+* append ``|| :`` (or ``|| true``) to ``%meson_test`` / ``%ctest`` / the test
+  command, which never reaches ``TESTS_ERROR`` at all;
+* define the macro somewhere the ``packages/*/*.spec`` glob does not read.
+  Not hypothetical: ``packages/grub2/grub2.spec:1136`` already does
+  ``%include %{SOURCE11}``, so a definition can live in a source file.
+
+Closing those mechanically means parsing ``%check`` bodies rather than grepping
+for one line, which is a different and much larger tool. Until that exists,
+treat this as a tripwire on the most likely route, not as proof that no recipe
+silences its tests -- the standing rule is the prose one in ``AGENTS.md`` and
+``.agents/skills/build-failure-triage/SKILL.md``: never skip or defang a test
+to make a build green. A reviewer still has to read the ``%check`` diff.
 """
 from __future__ import annotations
 

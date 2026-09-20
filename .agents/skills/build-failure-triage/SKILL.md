@@ -226,6 +226,13 @@ added here. The gate fails if that recipe stops defining it, and
 `tests/test_check_suppressed_tests.py` fails if the recipe is dropped, so the
 exception cannot quietly outlive its reason either way.
 
+The gate is a tripwire on the likeliest route, not proof that no recipe
+silences its tests. It greps for a definition line in `packages/*/*.spec`, so
+deleting the `%{!?tests_nonfatal:exit $TESTS_ERROR}` guard outright, appending
+`|| :` to the test command, or defining the macro in an `%include`d source
+file all still pass it. Those are covered by **Never** below, which is prose —
+read the `%check` diff rather than trusting a green gate.
+
 ## Verify against primary sources
 
 Do not infer a version from what Rawhide ships or from a package name.
