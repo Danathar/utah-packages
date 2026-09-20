@@ -6,15 +6,24 @@ import tempfile
 import unittest
 
 from tools.rebuild_plan import (
+    build_dependents,
     changed_entries,
     dependents_from_primary,
+    dragged_by,
     expected_release,
     is_published,
+    merge_dependents,
     overflow,
     plan,
+    plan_report,
+    policy_causes,
+    providers_from_primary,
     provides_from_primary,
     published_from_primary,
+    render_plan,
     reverse_closure,
+    selection,
+    spec_buildrequires,
     stage_outputs,
     stale_from_primary,
 )
@@ -31,11 +40,12 @@ def primary(*entries: tuple[str, str, str]) -> bytes:
     return f"<metadata>{body}</metadata>".encode()
 
 
-def recipe(root: Path, name: str, release: str) -> None:
+def recipe(root: Path, name: str, release: str, buildrequires: str = "") -> None:
     package_dir = root / "packages" / name
     package_dir.mkdir(parents=True)
     (package_dir / f"{name}.spec").write_text(
         f"Name:           {name}\nVersion:        1.0\nRelease:        {release}%{{?dist}}\n"
+        + buildrequires
     )
 
 
@@ -487,6 +497,258 @@ class ExcludedExternalTests(unittest.TestCase):
     def test_the_exclusion_is_declared_once_and_names_libicu_77(self) -> None:
         from tools.rebuild_plan import EXCLUDED_EXTERNAL
         self.assertIn(("libicu", "77."), EXCLUDED_EXTERNAL)
+
+
+class SpecBuildRequiresTests(unittest.TestCase):
+    """What a recipe asks the build root for, read literally."""
+
+    def test_reads_the_capability_without_its_version_constraint(self) -> None:
+        self.assertEqual(
+            spec_buildrequires("BuildRequires:  pkgconfig(gtk4) >= 4.0\n"),
+            {"pkgconfig(gtk4)"},
+        )
+
+    def test_splits_a_comma_separated_list(self) -> None:
+        self.assertEqual(
+            spec_buildrequires("BuildRequires: gcc, make >= 4, meson\n"),
+            {"gcc", "make", "meson"},
+        )
+
+    def test_the_tag_is_case_insensitive_and_may_carry_spaces(self) -> None:
+        self.assertEqual(spec_buildrequires("buildrequires :  cmake\n"), {"cmake"})
+
+    def test_an_unexpanded_macro_is_dropped_rather_than_guessed(self) -> None:
+        # Expanding macros here was tried once and died on a macro body ending
+        # in a backslash. A missing edge over-builds nothing; a wrong one
+        # displaces a real edge.
+        self.assertEqual(
+            spec_buildrequires("BuildRequires: %{python_module foo}\nBuildRequires: bar-%{api}-devel\n"),
+            set(),
+        )
+
+    def test_rich_dependencies_and_comments_are_not_read(self) -> None:
+        spec = "# BuildRequires: commented-out\nBuildRequires: (foo if bar)\n"
+        self.assertEqual(spec_buildrequires(spec), set())
+
+
+class BuildEdgeTests(unittest.TestCase):
+    """The BuildRequires edge: a rebuilt library drags what compiles on it.
+
+    libadwaita in this fixture links nothing of gtk4's at runtime, so the
+    repodata graph sees no edge at all; the only record of the relationship is
+    `BuildRequires: pkgconfig(gtk4)` in the recipe and gtk4-devel's Provides in
+    the published listing.
+    """
+
+    PRIMARY = full_primary(
+        ("gtk4", "gtk4", ["libgtk-4.so.1()(64bit)"], []),
+        ("gtk4-devel", "gtk4", ["pkgconfig(gtk4)", "gtk4-devel"], []),
+        ("libadwaita", "libadwaita", ["libadwaita-1.so.0()(64bit)"], []),
+    )
+
+    def test_providers_are_keyed_by_source_not_by_the_binary_that_ships_them(self) -> None:
+        providers = providers_from_primary(self.PRIMARY)
+        self.assertEqual(providers["pkgconfig(gtk4)"], {"gtk4"})
+
+    def test_a_devel_only_consumer_is_an_edge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipe(root, "gtk4", "1")
+            recipe(root, "libadwaita", "1", "BuildRequires:  pkgconfig(gtk4) >= 4.0\n")
+            self.assertEqual(dependents_from_primary(self.PRIMARY), {})
+            self.assertEqual(
+                build_dependents(root, ["gtk4", "libadwaita"], providers_from_primary(self.PRIMARY)),
+                {"gtk4": {"libadwaita"}},
+            )
+
+    def test_a_requirement_the_factory_does_not_provide_is_not_an_edge(self) -> None:
+        # gcc comes from Hummingbird. Counting it would drag the inventory on
+        # every base package, and rebuilding it is not this factory's to do.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipe(root, "gtk4", "1")
+            recipe(root, "libadwaita", "1", "BuildRequires: gcc\n")
+            self.assertEqual(
+                build_dependents(root, ["gtk4", "libadwaita"], providers_from_primary(self.PRIMARY)),
+                {},
+            )
+
+    def test_a_recipe_building_against_its_own_devel_is_not_an_edge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipe(root, "gtk4", "1", "BuildRequires: gtk4-devel\n")
+            self.assertEqual(
+                build_dependents(root, ["gtk4"], providers_from_primary(self.PRIMARY)),
+                {},
+            )
+
+    def test_editing_a_staged_library_selects_its_build_time_dependant(self) -> None:
+        config = {
+            "packages": [
+                {"name": "gtk4", "version": "1.0", "stage": 4},
+                {"name": "libadwaita", "version": "1.0", "stage": 5},
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipe(root, "gtk4", "1")
+            recipe(root, "libadwaita", "1", "BuildRequires:  pkgconfig(gtk4)\n")
+            dependents = merge_dependents(
+                dependents_from_primary(self.PRIMARY),
+                build_dependents(
+                    root,
+                    [entry["name"] for entry in config["packages"]],
+                    providers_from_primary(self.PRIMARY),
+                ),
+            )
+            selected = selection(
+                config, root, published=published_from_primary(self.PRIMARY),
+                changed={"gtk4"}, full=False, factory_repo="file:///work/factory",
+                dependents=dependents,
+            )
+        self.assertEqual(
+            [(entry["name"], reason) for entry, reason in selected],
+            [
+                ("gtk4", "recipe or inventory entry changed"),
+                ("libadwaita", "downstream of gtk4"),
+            ],
+        )
+
+    def test_the_named_provider_is_the_nearest_one(self) -> None:
+        # Four hops of "downstream of glib2" explains nothing; the immediate
+        # provider does.
+        dependents = {"a": {"b"}, "b": {"c"}}
+        self.assertEqual(dragged_by({"a"}, dependents), {"b": "a", "c": "b"})
+
+
+class PolicyChangeTests(unittest.TestCase):
+    """A change to the build root invalidates every published build."""
+
+    def test_the_buildroot_and_the_source_tooling_are_policy(self) -> None:
+        self.assertEqual(
+            policy_causes(
+                [
+                    "tools/mock_config.py",
+                    "config/hummingbird.repo",
+                    "packages/gtk4/gtk4.spec",
+                ]
+            ),
+            ["config/hummingbird.repo", "tools/mock_config.py"],
+        )
+
+    def test_a_composite_action_matches_by_directory(self) -> None:
+        self.assertEqual(
+            policy_causes([".github/actions/load-buildroot/action.yml"]),
+            [".github/actions/load-buildroot/action.yml"],
+        )
+
+    def test_tests_the_inventory_and_the_planner_are_not_policy(self) -> None:
+        # An earlier attempt listed all of tools/ and tests/, which turned a
+        # unit test edit into a full rebuild of 343 recipes. Neither can change
+        # a built RPM, and an inventory edit is already per-entry.
+        self.assertEqual(
+            policy_causes(
+                [
+                    "tests/test_rebuild_plan.py",
+                    "tools/rebuild_plan.py",
+                    "config/upstream-sources.json",
+                ]
+            ),
+            [],
+        )
+
+    def test_a_policy_change_selects_every_recipe_and_names_the_file(self) -> None:
+        config = {"packages": [{"name": "a", "version": "1.0"}, {"name": "b", "version": "1.0"}]}
+        selected = selection(
+            config, Path("/nonexistent"),
+            published={"a": ("1.0", "1.hum1.bfin"), "b": ("1.0", "1.hum1.bfin")},
+            changed=set(), full=True, factory_repo="file:///work/factory",
+            causes=["tools/mock_config.py"],
+        )
+        self.assertEqual([entry["name"] for entry, _ in selected], ["a", "b"])
+        self.assertEqual(
+            {reason for _, reason in selected},
+            {"buildroot or source policy changed: tools/mock_config.py"},
+        )
+
+
+class PlanReportTests(unittest.TestCase):
+    """The plan as reviewable data, and the reason attached to every pick."""
+
+    PRIMARY = full_primary(
+        ("mutter", "mutter", ["libmutter-17.so.0()(64bit)"], []),
+        ("gnome-shell", "gnome-shell", [], ["libmutter-17.so.0()(64bit)"]),
+        ("old", "old", [], []),
+    )
+
+    def selected(self) -> list[tuple[dict, str]]:
+        config = {
+            "packages": [
+                {"name": "mutter", "version": "1.0", "stage": 6},
+                {"name": "gnome-shell", "version": "1.0", "stage": 10},
+                # Published at 1.0, the inventory has moved to 2.0.
+                {"name": "old", "version": "2.0", "stage": 0},
+                # Never built: no recipe, no published entry.
+                {"name": "new", "version": "1.0", "stage": 0},
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("mutter", "gnome-shell", "old"):
+                recipe(root, name, "1")
+            self.config = config
+            return selection(
+                config, root, published=published_from_primary(self.PRIMARY),
+                changed={"mutter"}, full=False, factory_repo="file:///work/factory",
+                dependents=dependents_from_primary(self.PRIMARY),
+            )
+
+    def test_every_selection_carries_the_reason_it_was_made(self) -> None:
+        self.assertEqual(
+            {entry["name"]: reason for entry, reason in self.selected()},
+            {
+                "mutter": "recipe or inventory entry changed",
+                "gnome-shell": "downstream of mutter",
+                # A version bump with no diff range to read -- the nightly
+                # schedule -- is still caught by the published comparison.
+                "old": "not published at this version and release",
+                # A new package stays incremental: it is selected because it is
+                # not published, not because anything forced a full rebuild.
+                "new": "not published at this version and release",
+            },
+        )
+
+    def test_the_report_counts_the_inventory_and_groups_the_waves(self) -> None:
+        selected = self.selected()
+        report = plan_report(
+            self.config, selected, full=False, causes=[],
+            cacheable_names=["gnome-shell", "old", "new"],
+        )
+        self.assertEqual((report["selected"], report["inventory"], report["skipped"]), (4, 4, 0))
+        self.assertEqual(report["waves"]["10"], ["gnome-shell"])
+        mutter = next(p for p in report["packages"] if p["name"] == "mutter")
+        # The recipe its author just edited is owed a real build, not a cache hit.
+        self.assertFalse(mutter["cacheable"])
+
+    def test_the_markdown_states_the_counts_and_the_policy_cause(self) -> None:
+        report = plan_report(
+            {"packages": [{"name": "a"}] * 343}, [({"name": "a", "stage": 0}, "why")],
+            full=True, causes=["tools/mock_config.py"], cacheable_names=[],
+        )
+        markdown = render_plan(report)
+        self.assertIn("**1 of 343 recipes selected**, 342 skipped", markdown)
+        self.assertIn("`tools/mock_config.py`", markdown)
+        self.assertIn("| a | 0 | why | no |", markdown)
+
+    def test_a_long_table_is_truncated_and_says_so(self) -> None:
+        selected = [({"name": f"p{n}", "stage": 0}, "full rebuild requested") for n in range(80)]
+        report = plan_report(
+            {"packages": [entry for entry, _ in selected]}, selected,
+            full=True, causes=[], cacheable_names=[],
+        )
+        markdown = render_plan(report)
+        self.assertIn("20 more, in the `build-plan` artifact", markdown)
+        self.assertEqual(len(report["packages"]), 80, "the artifact keeps every row")
 
 
 if __name__ == "__main__":

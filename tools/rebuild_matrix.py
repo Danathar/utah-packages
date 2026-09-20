@@ -21,34 +21,45 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tools.rebuild_plan import (
+    build_dependents,
     cacheable,
     stale_from_primary,
     provides_from_primary,
     changed_entries,
     dependents_from_primary,
+    merge_dependents,
     overflow,
-    plan,
+    plan_report,
+    policy_causes,
+    providers_from_primary,
     published_from_primary,
+    render_plan,
+    selection,
     stage_outputs,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
 PUBLISHED_REPO_TIMEOUT = 120
 INVENTORY = "config/upstream-sources.json"
+PLAN_REPORT = Path("work") / "reports" / "build-plan.json"
 
 
-def changed_recipes(base_sha: str) -> set[str]:
-    """Recipes touched since the base commit.
+def changed_paths(base_sha: str) -> list[str]:
+    """Every path touched since the base commit.
 
     Empty when there is no range to read -- a scheduled run has no `before` and
     no pull request base -- which is why the published comparison must stand on
     its own rather than leaning on this.
     """
     if not re.fullmatch(r"[0-9a-f]{40}", base_sha or "") or set(base_sha) == {"0"}:
-        return set()
-    paths = subprocess.check_output(
+        return []
+    return subprocess.check_output(
         ["git", "diff", "--name-only", f"{base_sha}..HEAD"], text=True
     ).splitlines()
+
+
+def changed_recipes(base_sha: str, paths: list[str]) -> set[str]:
+    """Recipes touched since the base commit."""
     changed = {
         match.group(1)
         for path in paths
@@ -120,13 +131,35 @@ def fetch_published(base_url: str) -> dict[str, tuple[str, str]]:
     return published_from_primary(fetch_primary(base_url))
 
 
+def write_report(report: dict) -> None:
+    """Leave the plan where a human and the next job can both read it."""
+    path = ROOT / PLAN_REPORT
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2) + "\n")
+    markdown = render_plan(report)
+    path.with_suffix(".md").write_text(markdown)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as handle:
+            handle.write(markdown + "\n")
+
+
 def main() -> int:
     config = json.loads((ROOT / INVENTORY).read_text())
-    full = os.environ.get("FULL") == "1"
     factory_repo = os.environ.get("FACTORY_REPO", "")
 
-    changed = changed_recipes(os.environ.get("BASE_SHA", ""))
+    base_sha = os.environ.get("BASE_SHA", "")
+    paths = changed_paths(base_sha)
+    changed = changed_recipes(base_sha, paths)
     print(f"changed package recipes: {', '.join(sorted(changed)) or 'none'}")
+
+    # A change to the build root or to the source tooling changes what every
+    # recipe would build, and none of it is visible in a published NEVR, so
+    # the listing stops being a witness for anything.
+    causes = policy_causes(paths)
+    full = os.environ.get("FULL") == "1" or bool(causes)
+    if causes:
+        print(f"buildroot or source policy changed, rebuilding all: {', '.join(causes)}")
 
     published: dict[str, tuple[str, str]] = {}
     dependents: dict[str, set[str]] = {}
@@ -136,7 +169,18 @@ def main() -> int:
         try:
             primary = fetch_primary(factory_repo)
             published = published_from_primary(primary)
-            dependents = dependents_from_primary(primary) if primary else {}
+            if primary:
+                # Runtime edges from what is published, build-time edges from
+                # the recipes on disk, resolved through the same listing. One
+                # graph: either kind of edge is a reason to rebuild.
+                dependents = merge_dependents(
+                    dependents_from_primary(primary),
+                    build_dependents(
+                        ROOT,
+                        [entry["name"] for entry in config["packages"]],
+                        providers_from_primary(primary),
+                    ),
+                )
             print(f"published repo has {len(published)} source packages")
         except Exception as error:  # noqa: BLE001 - availability, not correctness
             print(
@@ -167,7 +211,7 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    build = plan(
+    selected = selection(
         config,
         ROOT,
         published=published,
@@ -176,24 +220,30 @@ def main() -> int:
         factory_repo=factory_repo,
         dependents=dependents,
         stale=set(stale),
+        causes=causes,
     )
+    build = [entry for entry, _ in selected]
     building = {entry["name"] for entry in build}
-    direct = {
-        entry["name"]
-        for entry in plan(
-            config, ROOT, published=published, changed=changed, full=full,
-            factory_repo=factory_repo, stale=set(stale),
-        )
-    }
     for entry in config["packages"]:
         name = entry["name"]
         if name not in building:
             print(f"skip {name}: already published")
-        elif name in stale:
+    for entry, reason in selected:
+        name = entry["name"]
+        if name in stale:
             missing = ", ".join(sorted(stale[name])[:3])
             print(f"rebuild {name}: published build requires {missing}, which nothing provides")
-        elif name not in direct:
-            print(f"rebuild {name}: depends on something being rebuilt")
+        else:
+            print(f"rebuild {name}: {reason}")
+
+    cacheable_names = cacheable(build, changed, set(stale))
+    # Written before the overflow check, because a run that dies on a stage
+    # with no job is exactly one where the plan is worth reading.
+    write_report(
+        plan_report(
+            config, selected, full=full, causes=causes, cacheable_names=cacheable_names
+        )
+    )
 
     if late := overflow(build):
         raise SystemExit(
@@ -202,7 +252,7 @@ def main() -> int:
         )
 
     outputs = stage_outputs(build)
-    outputs["cacheable"] = json.dumps(cacheable(build, changed, set(stale)))
+    outputs["cacheable"] = json.dumps(cacheable_names)
     for stage in range(11):
         chunks = json.loads(outputs[f"stage{stage}_chunks"])
         if len(chunks) > 1:

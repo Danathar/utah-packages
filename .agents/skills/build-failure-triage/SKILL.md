@@ -143,6 +143,29 @@ When a later stage cannot see what an earlier stage built, check in this order:
 3. What is the artifact's size? A few hundred bytes means metadata only.
 4. Only then look at the consuming side.
 
+## Rule 5: the run wrote down why it selected every package — read that first
+
+Every `prepare` job uploads a `build-plan` artifact (`build-plan.json` and
+`.md`, also rendered into the step summary) recording, for each recipe, why it
+was selected — `recipe or inventory entry changed`, `downstream of <provider>`,
+`published build requires what nothing provides any more`, `buildroot or
+source policy changed: <paths>` — or that it was skipped as already published.
+It is retained for 14 days, past the job log.
+
+Use it before reconstructing the decision from logs:
+
+- "Why did a one-line spec fix rebuild 200 packages?" — the plan names the
+  provider each dependent was dragged through, and whether a policy path
+  (`tools/mock_config.py`, `build-stage.yml`, `config/hummingbird.repo`, the
+  source tooling) forced a full rebuild.
+- "Why was this package skipped when its library moved?" — if the plan says
+  `already published` and the package should have been dragged, the missing
+  edge is the bug: runtime edges come from published repodata
+  (`dependents_from_primary`), build-time edges from literal `BuildRequires:`
+  lines resolved against what the factory publishes (`build_dependents`). A
+  BuildRequires hidden behind an unexpanded macro or a rich `(a if b)` clause
+  makes no edge, deliberately — that is the residual gap to check.
+
 ## Classifying the failure
 
 | What the log shows | What it means | What to do |

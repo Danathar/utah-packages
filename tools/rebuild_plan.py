@@ -83,6 +83,35 @@ RPM_NS = "http://linux.duke.edu/metadata/rpm"
 COMMON_NS = "http://linux.duke.edu/metadata/common"
 
 
+def providers_from_primary(primary: bytes) -> dict[str, set[str]]:
+    """Map capability -> the source packages whose binaries provide it.
+
+    Everything the published repository declares: rpm Provides, the package
+    names themselves by way of their implicit Provides, and the files the
+    binaries ship -- a `Requires: /usr/bin/foo` resolves through those in
+    every sense dnf cares about.
+
+    This is the one authoritative statement of which factory recipe supplies
+    a given capability. Both dependency graphs read it rather than guessing a
+    name: `libfoo-devel` and `pkgconfig(foo)` belong to whichever source the
+    repository says they belong to, which is not derivable from the string.
+    """
+    provided_by: dict[str, set[str]] = {}
+    root = ElementTree.fromstring(primary)
+    for package in root.iter(f"{{{COMMON_NS}}}package"):
+        fmt = package.find(f"{{{COMMON_NS}}}format")
+        if fmt is None:
+            continue
+        source = source_name(fmt.findtext(f"{{{RPM_NS}}}sourcerpm") or "")
+        if source is None:
+            continue
+        for entry in fmt.iterfind(f"{{{RPM_NS}}}provides/{{{RPM_NS}}}entry"):
+            provided_by.setdefault(entry.get("name", ""), set()).add(source)
+        for file in fmt.iterfind(f"{{{COMMON_NS}}}file"):
+            provided_by.setdefault(file.text or "", set()).add(source)
+    return provided_by
+
+
 def dependents_from_primary(primary: bytes) -> dict[str, set[str]]:
     """Map source package name -> the source packages that depend on it.
 
@@ -91,43 +120,114 @@ def dependents_from_primary(primary: bytes) -> dict[str, set[str]]:
     {gnome-shell}. That is exactly the edge a soname break travels along, and
     the one a skip must never cut: with the published listing as a witness, a
     fix to mutter would build mutter alone and leave a gnome-shell in the
-    repository that was linked against the mutter it just replaced. The
-    published repository carries no source RPMs, so BuildRequires are not
-    readable here; a devel package that is only built against, never linked,
-    is the residual gap.
+    repository that was linked against the mutter it just replaced.
+
+    The published repository carries no source RPMs, so BuildRequires are not
+    readable here: a devel package that is only built against and never linked
+    leaves no edge in this graph. `build_dependents` below closes that half by
+    reading the recipes on disk.
 
     Self-edges are dropped: a package requiring its own subpackages is not a
     reason to rebuild anything else.
     """
-    provided_by: dict[str, set[str]] = {}
-    requires: list[tuple[str, set[str]]] = []
+    provided_by = providers_from_primary(primary)
+    dependents: dict[str, set[str]] = {}
     root = ElementTree.fromstring(primary)
     for package in root.iter(f"{{{COMMON_NS}}}package"):
         fmt = package.find(f"{{{COMMON_NS}}}format")
         if fmt is None:
             continue
-        sourcerpm = fmt.findtext(f"{{{RPM_NS}}}sourcerpm") or ""
-        source = source_name(sourcerpm)
+        source = source_name(fmt.findtext(f"{{{RPM_NS}}}sourcerpm") or "")
         if source is None:
             continue
-        for entry in fmt.iterfind(f"{{{RPM_NS}}}provides/{{{RPM_NS}}}entry"):
-            provided_by.setdefault(entry.get("name", ""), set()).add(source)
-        # Files a package ships are Provides in every sense dnf cares about:
-        # a Requires: /usr/bin/foo resolves through them.
-        for file in fmt.iterfind(f"{{{COMMON_NS}}}file"):
-            provided_by.setdefault(file.text or "", set()).add(source)
-        needed = {
-            entry.get("name", "")
-            for entry in fmt.iterfind(f"{{{RPM_NS}}}requires/{{{RPM_NS}}}entry")
-        }
-        requires.append((source, needed))
-    dependents: dict[str, set[str]] = {}
-    for source, needed in requires:
-        for capability in needed:
-            for provider in provided_by.get(capability, ()):
+        for entry in fmt.iterfind(f"{{{RPM_NS}}}requires/{{{RPM_NS}}}entry"):
+            for provider in provided_by.get(entry.get("name", ""), ()):
                 if provider != source:
                     dependents.setdefault(provider, set()).add(source)
     return dependents
+
+
+# `BuildRequires:` as rpm parses the tag: case-insensitive, optional spaces
+# before the colon. Anything after it is a comma- or newline-separated list of
+# capabilities, each optionally followed by a version constraint.
+BUILDREQUIRES = re.compile(r"^\s*BuildRequires\s*:\s*(.+)$", re.IGNORECASE)
+VERSION_OPERATORS = frozenset({"<", "<=", "=", "==", ">=", ">"})
+
+
+def spec_buildrequires(spec: str) -> set[str]:
+    """The capabilities a spec asks the build root for, as written.
+
+    Deliberately literal. A token carrying `%` is an unexpanded macro and a
+    token opening with `(` is a rich dependency; neither can be resolved
+    without rpm, so the clause is dropped rather than guessed at. Expanding
+    macros here was tried in an earlier attempt at this and produced a
+    `re.PatternError` on the first spec whose macro body ended in a backslash.
+
+    Dropping a clause loses an edge, which under-selects; inventing one
+    displaces a real edge, which is the bug this graph exists to prevent. The
+    conservative direction is the one that only costs coverage.
+    """
+    capabilities: set[str] = set()
+    for line in spec.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        match = BUILDREQUIRES.match(line)
+        if match is None:
+            continue
+        for clause in match.group(1).split(","):
+            skip_next = False
+            for token in clause.split():
+                if skip_next:
+                    skip_next = False
+                    continue
+                if token in VERSION_OPERATORS:
+                    skip_next = True
+                    continue
+                if "%" in token or token.startswith("("):
+                    break
+                capabilities.add(token)
+    return capabilities
+
+
+def build_dependents(
+    root: Path, names: list[str], providers: dict[str, set[str]]
+) -> dict[str, set[str]]:
+    """Map source package name -> the recipes that BuildRequire what it ships.
+
+    The other half of the closure. gtk4 does not link libadwaita, it is built
+    against `pkgconfig(gtk4)` out of gtk4-devel, so no runtime Requires records
+    the relationship and `dependents_from_primary` cannot see it -- yet a gtk4
+    rebuild is exactly when libadwaita has to be rebuilt, before the headers it
+    compiled against and the library it resolves at runtime disagree.
+
+    `providers` is `providers_from_primary` of the published factory
+    repository, so only capabilities the factory itself supplies make an edge.
+    A BuildRequires satisfied by Fedora or Hummingbird is not this factory's to
+    rebuild, and counting it would drag the inventory on every base package.
+    Both sides of the edge are therefore declared rather than inferred: the
+    consumer states the capability, the repository states who provides it.
+    """
+    dependents: dict[str, set[str]] = {}
+    for name in names:
+        for spec in sorted((root / "packages" / name).glob("*.spec")):
+            try:
+                text = spec.read_text()
+            except OSError:
+                continue
+            for capability in spec_buildrequires(text):
+                for provider in providers.get(capability, ()):
+                    if provider != name:
+                        dependents.setdefault(provider, set()).add(name)
+    return dependents
+
+
+def merge_dependents(*graphs: dict[str, set[str]]) -> dict[str, set[str]]:
+    """One reverse dependency map from several, unioned per provider."""
+    merged: dict[str, set[str]] = {}
+    for graph in graphs:
+        for provider, consumers in graph.items():
+            merged.setdefault(provider, set()).update(consumers)
+    return merged
 
 
 # Builds the consumer transaction refuses, as (name, version prefix). Their
@@ -228,17 +328,72 @@ def source_name(sourcerpm: str) -> str | None:
     return name or None
 
 
+def dragged_by(names: set[str], dependents: dict[str, set[str]]) -> dict[str, str]:
+    """Every package transitively depending on `names`, and through whom.
+
+    The value is the provider the package was reached through, which is what
+    the plan report prints as the reason it was selected. Breadth-first, so
+    that is the *nearest* provider rather than whichever edge a stack happened
+    to pop last: "downstream of mutter" explains a gnome-shell rebuild;
+    "downstream of glib2" four hops away does not.
+    """
+    dragged: dict[str, str] = {}
+    frontier = sorted(names)
+    while frontier:
+        current = frontier.pop(0)
+        for dependent in sorted(dependents.get(current, ())):
+            if dependent not in dragged and dependent not in names:
+                dragged[dependent] = current
+                frontier.append(dependent)
+    return dragged
+
+
 def reverse_closure(names: set[str], dependents: dict[str, set[str]]) -> set[str]:
     """Every published package that transitively depends on one of `names`."""
-    closure: set[str] = set()
-    frontier = list(names)
-    while frontier:
-        current = frontier.pop()
-        for dependent in dependents.get(current, ()):
-            if dependent not in closure and dependent not in names:
-                closure.add(dependent)
-                frontier.append(dependent)
-    return closure
+    return set(dragged_by(names, dependents))
+
+
+# Files that shape how every package is built rather than what any one package
+# is. A change to one of them invalidates the whole published repository the
+# same way a spec edit invalidates one recipe -- the fourth rule in
+# docs/skills/repeated-mistakes.md, applied to the build root instead of to an
+# inventory entry. Without this a buildroot policy change ran the workflow,
+# matched every recipe against the listing, and built nothing at all.
+#
+# Kept narrow on purpose. Editing a test or the planner itself cannot change a
+# built RPM, so neither belongs here; an earlier attempt listed all of
+# `tools/` and `tests/` and turned every push to this file into a full
+# rebuild.
+POLICY_PATHS: tuple[str, ...] = (
+    # The mock configuration and the repositories a build root is given.
+    "tools/mock_config.py",
+    "config/hummingbird.repo",
+    # How a tarball is produced and how Release is derived, for every recipe.
+    "tools/source_pipeline.py",
+    "tools/generated_sources.py",
+    "tools/dist_bump.py",
+    # The job every package is built by, and the actions it composes.
+    ".github/workflows/build-stage.yml",
+    ".github/actions/load-buildroot/",
+    ".github/actions/setup-sccache/",
+)
+
+
+def policy_causes(paths: list[str]) -> list[str]:
+    """Which changed paths are buildroot or source policy, in sorted order.
+
+    An entry ending in `/` names a directory and matches by prefix; anything
+    else is a file and matches exactly, so `tools/mock_config.py` does not
+    also claim a hypothetical `tools/mock_config.py.orig`.
+    """
+    return sorted(
+        {
+            path
+            for path in paths
+            for policy in POLICY_PATHS
+            if path == policy or (policy.endswith("/") and path.startswith(policy))
+        }
+    )
 
 
 def normalize_version(version: str) -> str:
@@ -322,6 +477,72 @@ def changed_entries(before: dict, after: dict) -> set[str]:
     }
 
 
+def selection(
+    config: dict,
+    root: Path,
+    *,
+    published: dict[str, tuple[str, str]],
+    changed: set[str],
+    full: bool,
+    factory_repo: str,
+    dependents: dict[str, set[str]] | None = None,
+    stale: set[str] = frozenset(),
+    causes: list[str] = (),
+) -> list[tuple[dict, str]]:
+    """The recipes to build, in inventory order, each with why it was picked.
+
+    `dependents` is the reverse dependency map of the factory: the runtime
+    edges of the published repository (`dependents_from_primary`) merged with
+    the build-time edges of the recipes on disk (`build_dependents`). Whatever
+    is rebuilt drags its dependents with it, so a skip can never leave a
+    consumer linked against -- or compiled against -- a library the same run is
+    replacing. `stale` names published packages whose binaries require
+    something nothing provides any more (see stale_from_primary); they build
+    regardless of matching the recipe. `causes` is the policy paths that forced
+    `full`, carried only so the reason can name them.
+
+    The reason is a sentence for the plan report, not a value anything
+    branches on.
+    """
+    # Without a factory repository the build root cannot see anything the
+    # published listing claims, so the listing is not a witness and nothing may
+    # be skipped.
+    trust_published = bool(factory_repo) and bool(published)
+    selected: list[tuple[dict, str]] = []
+    for entry in config["packages"]:
+        name = entry["name"]
+        if full:
+            reason = (
+                f"buildroot or source policy changed: {', '.join(causes)}"
+                if causes
+                else "full rebuild requested"
+            )
+        elif name in changed:
+            reason = "recipe or inventory entry changed"
+        elif name in stale:
+            reason = "published build requires what nothing provides any more"
+        elif not trust_published:
+            reason = "no published repository to compare against"
+        elif is_published(root, entry, published):
+            continue
+        else:
+            reason = "not published at this version and release"
+        selected.append((entry, reason))
+    if dependents:
+        building = {entry["name"] for entry, _ in selected}
+        dragged = dragged_by(building, dependents)
+        reasons = {entry["name"]: reason for entry, reason in selected}
+        reasons.update(
+            {name: f"downstream of {provider}" for name, provider in dragged.items()}
+        )
+        selected = [
+            (entry, reasons[entry["name"]])
+            for entry in config["packages"]
+            if entry["name"] in reasons
+        ]
+    return selected
+
+
 def plan(
     config: dict,
     root: Path,
@@ -333,37 +554,20 @@ def plan(
     dependents: dict[str, set[str]] | None = None,
     stale: set[str] = frozenset(),
 ) -> list[dict]:
-    """The recipes to build, in inventory order.
-
-    `dependents` is the reverse dependency map of the published repository
-    (see dependents_from_primary). Whatever is rebuilt drags its published
-    dependents with it, so a skip can never leave a consumer linked against
-    a library the same run is replacing. `stale` names published packages
-    whose binaries require something nothing provides any more (see
-    stale_from_primary); they build regardless of matching the recipe.
-    """
-    # Without a factory repository the build root cannot see anything the
-    # published listing claims, so the listing is not a witness and nothing may
-    # be skipped.
-    trust_published = bool(factory_repo) and bool(published)
-    build = []
-    for entry in config["packages"]:
-        name = entry["name"]
-        if full or name in changed or name in stale or not trust_published:
-            build.append(entry)
-        elif is_published(root, entry, published):
-            continue
-        else:
-            build.append(entry)
-    if dependents:
-        building = {entry["name"] for entry in build}
-        dragged = reverse_closure(building, dependents)
-        build = [
-            entry
-            for entry in config["packages"]
-            if entry["name"] in building or entry["name"] in dragged
-        ]
-    return build
+    """The recipes to build, in inventory order."""
+    return [
+        entry
+        for entry, _ in selection(
+            config,
+            root,
+            published=published,
+            changed=changed,
+            full=full,
+            factory_repo=factory_repo,
+            dependents=dependents,
+            stale=stale,
+        )
+    ]
 
 
 def cacheable(build: list[dict], changed: set[str], stale: set[str]) -> list[str]:
@@ -408,6 +612,92 @@ def stage_outputs(build: list[dict]) -> dict[str, str]:
             [json.dumps(chunk) for chunk in chunks]
         )
     return outputs
+
+
+# A full rebuild is 343 recipes and every one of them would be a table row.
+# The table is for reading; the artifact is for the whole answer.
+REPORT_ROWS = 60
+
+
+def plan_report(
+    config: dict,
+    selected: list[tuple[dict, str]],
+    *,
+    full: bool,
+    causes: list[str],
+    cacheable_names: list[str],
+) -> dict:
+    """The build plan as reviewable data.
+
+    Written next to the run as an artifact so the decision can be read after
+    the fact. Until this existed the only record of why a run built 331
+    packages, or why it built seven, was a log line per package in a job that
+    expires -- and "why was this skipped" is the question every publish
+    failure starts with.
+    """
+    cacheable = set(cacheable_names)
+    packages = [
+        {
+            "name": entry["name"],
+            "stage": entry.get("stage") or 0,
+            "reason": reason,
+            "cacheable": entry["name"] in cacheable,
+        }
+        for entry, reason in selected
+    ]
+    waves: dict[str, list[str]] = {}
+    for package in packages:
+        waves.setdefault(str(package["stage"]), []).append(package["name"])
+    return {
+        "full": full,
+        "policy_causes": list(causes),
+        "inventory": len(config["packages"]),
+        "selected": len(packages),
+        "skipped": len(config["packages"]) - len(packages),
+        "waves": waves,
+        "packages": packages,
+    }
+
+
+def render_plan(report: dict) -> str:
+    """The build plan as Markdown for the job summary."""
+    lines = [
+        "## Rebuild plan",
+        "",
+        f"**{report['selected']} of {report['inventory']} recipes selected**, "
+        f"{report['skipped']} skipped as already published.",
+        "",
+    ]
+    if report["policy_causes"]:
+        lines += [
+            "Buildroot or source policy changed, so every recipe is selected: "
+            + ", ".join(f"`{path}`" for path in report["policy_causes"]),
+            "",
+        ]
+    elif report["full"]:
+        lines += ["A full rebuild was requested, so nothing is skipped.", ""]
+    if report["waves"]:
+        lines += ["| Wave | Recipes |", "| --- | --- |"]
+        lines += [
+            f"| {stage} | {len(report['waves'][stage])} |"
+            for stage in sorted(report["waves"], key=int)
+        ]
+        lines.append("")
+    if report["packages"]:
+        lines += ["| Recipe | Wave | Why | Cache |", "| --- | --- | --- | --- |"]
+        for package in report["packages"][:REPORT_ROWS]:
+            cache = "yes" if package["cacheable"] else "no"
+            lines.append(
+                f"| {package['name']} | {package['stage']} | "
+                f"{package['reason']} | {cache} |"
+            )
+        remaining = len(report["packages"]) - REPORT_ROWS
+        if remaining > 0:
+            lines.append(
+                f"| … | | {remaining} more, in the `build-plan` artifact | |"
+            )
+        lines.append("")
+    return "\n".join(lines)
 
 
 def overflow(build: list[dict]) -> list[str]:

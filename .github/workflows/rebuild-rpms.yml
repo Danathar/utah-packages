@@ -30,9 +30,11 @@ on:
       - tools/rebuild_plan.py
       - tools/mock_config.py
       - tools/runtime_contract.py
+      - tools/dist_bump.py
       - tests/**
       - .github/workflows/rebuild-rpms.yml
       - .github/workflows/build-stage.yml
+      - .github/actions/**
   pull_request:
     paths:
       - config/**
@@ -43,9 +45,11 @@ on:
       - tools/rebuild_plan.py
       - tools/mock_config.py
       - tools/runtime_contract.py
+      - tools/dist_bump.py
       - tests/**
       - .github/workflows/rebuild-rpms.yml
       - .github/workflows/build-stage.yml
+      - .github/actions/**
   schedule:
     - cron: '41 6 * * *'
 
@@ -238,6 +242,17 @@ jobs:
             export FACTORY_REPO=
           fi
           python3 tools/rebuild_matrix.py
+      # The plan, as data, outliving the job log it was decided in. Every
+      # publish post-mortem starts with "why was this package skipped", and
+      # until this existed the answer was a line in a log that expires.
+      # `always()` because a plan that overflowed a stage is one worth reading.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: build-plan
+          path: work/reports/build-plan.*
+          if-no-files-found: warn
+          retention-days: 14
 
   preflight:
     # Every missing platform dependency has so far been found the slow way: a
