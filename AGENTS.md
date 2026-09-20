@@ -164,6 +164,12 @@ tooling arrives; do not copy them as-is.
   `quay.io/packit/packit` container. The container owns the toolchain: do not
   use ad hoc or unpinned containers, install packages into it at runtime, or
   substitute a generic distro image.
+- Buildroots are declared by image digest in
+  [`config/buildroot-lock.json`](config/buildroot-lock.json). A rebuild
+  snapshots the NEVRAs the root actually carried and publishes a
+  package/source/buildroot manifest beside the OCI digest. `just check` fails
+  when the lock and the workflow that pulls it name different digests. See
+  [`docs/skills/supply-chain-provenance.md`](docs/skills/supply-chain-provenance.md).
 - Never skip a test, or push an empty commit, to get a build green.
 
 ## Sibling repository

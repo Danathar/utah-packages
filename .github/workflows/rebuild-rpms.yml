@@ -288,6 +288,13 @@ jobs:
               fi
               dnf -y $disable install dnf-plugins-core rpm-build @buildsys-build
               rpm -q --qf "buildroot openssl: %{VERSION}-%{RELEASE}\n" openssl-libs || true
+              # What the build root actually resolved to, recorded after the
+              # BuildRequires install so the list is the root the waves get.
+              # Only rpm runs here: the root carries no interpreter this job is
+              # entitled to assume, and installing one to take its own
+              # inventory would change the thing being measured.
+              rpm -qa --qf "%{NAME}\t%|EPOCH?{%{EPOCH}:}|%{VERSION}-%{RELEASE}\t%{ARCH}\n" \
+                > /work/reports/buildroot-fedora-44.rpms
               : > /work/reports/preflight.txt
               # Only resolve BuildRequires for packages this run will actually
               # build (the incremental matrix), not the whole tree.
@@ -332,10 +339,27 @@ jobs:
               echo "=== recipes with unresolved BuildRequires ==="
               cat /work/reports/preflight.txt
             '
+      # The snapshot is assembled on the runner, from the inventory the root
+      # printed, so the buildroot itself needs nothing but rpm. It records the
+      # digest prepare resolved beside the digest the lock expects: a tag that
+      # moved is then visible in the manifest instead of being asserted away.
+      - name: Snapshot the build root package set
+        env:
+          BUILDROOT_DIGEST: ${{ needs.prepare.outputs.buildroot_digest }}
+        run: |
+          python3 tools/buildroot_lock.py snapshot fedora-44 \
+            --packages-from work/reports/buildroot-fedora-44.rpms \
+            --digest "$BUILDROOT_DIGEST" \
+            --output work/reports/buildroot-fedora-44.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: preflight-buildrequires
           path: work/reports/preflight.txt
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: preflight-buildroot
+          path: work/reports/buildroot-fedora-44.json
           if-no-files-found: warn
 
   # Five waves of the same build, ordered so a package can resolve a
@@ -718,6 +742,11 @@ jobs:
           pattern: rpm-*
           path: repository
           merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: preflight-buildroot
+          path: repository/reports
+        continue-on-error: true
       - name: Create and keylessly sign repository metadata
         run: |
           sudo apt-get update && sudo apt-get install -y createrepo-c
@@ -802,6 +831,13 @@ jobs:
               fi
               echo "Hummingbird-only consumer transaction resolves ${#packages[@]} packages"
             '
+      - name: Emit factory manifest before container build
+        run: |
+          python3 tools/factory_manifest.py \
+            --repository repository \
+            --build-list '${{ needs.prepare.outputs.build_list }}' \
+            --buildroot-lock config/buildroot-lock.json \
+            --output repository/manifest.json
       # The repository as an OCI image, which is how everything else in this
       # ecosystem ships build output: Utah Containerfile already pulls
       # projectbluefin/common and ublue-os/brew this way, pinned by digest.
@@ -881,3 +917,16 @@ jobs:
           subject-name: ${{ steps.oci.outputs.image }}
           subject-digest: ${{ steps.oci.outputs.digest }}
           push-to-registry: true
+      - name: Record published OCI digest in factory manifest
+        run: |
+          python3 tools/factory_manifest.py \
+            --repository repository \
+            --build-list '${{ needs.prepare.outputs.build_list }}' \
+            --buildroot-lock config/buildroot-lock.json \
+            --output repository/manifest.json \
+            --oci-ref "${{ steps.oci.outputs.ref }}" \
+            --oci-digest "${{ steps.oci.outputs.digest }}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: factory-manifest
+          path: repository/manifest.json

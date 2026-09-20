@@ -52,9 +52,10 @@
     },
     {
       "customType": "regex",
-      "description": "Container images named inside a workflow run: script. Renovate's docker manager reads Dockerfiles, container: and services:, none of which covers an image passed to docker run in a shell line -- so these pins were tracked by nothing and rotted twice in a week, each time taking every job in the run down with exit 125 before a line of its script ran (quay.io/fedora/fedora, and quay.io/packit/packit on two separate digests). The tag is written alongside the digest so this can resolve what to track: fedora follows :44, not :latest.",
+      "description": "Container images named inside a workflow run: script, and the same images declared in config/buildroot-lock.json. Renovate's docker manager reads Dockerfiles, container: and services:, none of which covers an image passed to docker run in a shell line -- so these pins were tracked by nothing and rotted twice in a week, each time taking every job in the run down with exit 125 before a line of its script ran (quay.io/fedora/fedora, and quay.io/packit/packit on two separate digests). The lock file is covered by the same manager so both copies of a buildroot digest move in one pull request; tools/validate.py fails the build if they ever diverge. The tag is written alongside the digest so this can resolve what to track: fedora follows :44, not :latest.",
       "managerFilePatterns": [
-        "/^\\.github/workflows/.+\\.ya?ml$/"
+        "/^\\.github/workflows/.+\\.ya?ml$/",
+        "/^config/buildroot-lock\\.json$/"
       ],
       "matchStrings": [
         "(?<depName>quay\\.io/[^:@\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
