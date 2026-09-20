@@ -172,6 +172,22 @@
       "sha512": "cf8be1759399fb9e3b7c84d353a876b8f599b74fb3094a288333cf0b61a743b74484cbde7eab96576b214c92caf7de65ef94813bb3670e079585c371a438f6b4"
     },
     {
+      "name": "cups-browsed",
+      "version": "2.1.1",
+      "stage": 2,
+      "url": "https://github.com/OpenPrinting/cups-browsed/releases/download/2.1.1/cups-browsed-2.1.1.tar.gz",
+      "filename": "cups-browsed-2.1.1.tar.gz",
+      "sha512": "e0c611f9d43acd86561c2cb7cd23f27846620f8a96ce41dc8e97459d85e993aa501f9f35de411a5437bde92fdea74514a506942496ea2623378c6ab383d6aa8f"
+    },
+    {
+      "name": "cups-filters",
+      "version": "2.0.1",
+      "stage": 2,
+      "url": "https://github.com/OpenPrinting/cups-filters/releases/download/2.0.1/cups-filters-2.0.1.tar.gz",
+      "filename": "cups-filters-2.0.1.tar.gz",
+      "sha512": "b5d7b8f5a89a6a6bba0e861dd3c3263195be75996d22129d123f325f6bff74fbabf22f2ee2d953908ffb8294d825af5568af6695896c76ef4082ae98cd19c42c"
+    },
+    {
       "name": "cups-pk-helper",
       "version": "0.2.7",
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/cups-pk-helper/cups-pk-helper-0.2.7.tar.xz/sha512/8f1d5dce73a52552d00eb3f54b39e03ca7ae711a0591572a25bd8926e228457628f1ee7e6ae89bda1b0ef473f860ad85bff9036ca1bc244d2cbda530bab96d40/cups-pk-helper-0.2.7.tar.xz",
@@ -1256,6 +1272,14 @@
       ]
     },
     {
+      "name": "libcupsfilters",
+      "version": "2.2.1",
+      "stage": 0,
+      "url": "https://github.com/OpenPrinting/libcupsfilters/releases/download/2.2.1/libcupsfilters-2.2.1.tar.gz",
+      "filename": "libcupsfilters-2.2.1.tar.gz",
+      "sha512": "9d4b34cd56fa9d6ad1307779458e231e5474fc046edb298d13ba9037574ed91a1ed2f13d479ab0028e1d213dfba867917c503cb926b9e605f74a29037ac026f0"
+    },
+    {
       "name": "libdaemon",
       "version": "0.14",
       "url": "http://0pointer.de/lennart/projects/libdaemon/libdaemon-0.14.tar.gz",
@@ -1586,6 +1610,14 @@
       "filename": "libportal-0.10.0.tar.xz",
       "sha512": "1ddd359d399c523c03cdeb70eb7009d706f281373650b7c44644492fb8de55aa5ed92ef57f0c4cd1c8c2a8d3ee159ed806d1afd246a050a40aaa8664d91c66a2",
       "stage": 5
+    },
+    {
+      "name": "libppd",
+      "version": "2.1.1",
+      "stage": 1,
+      "url": "https://github.com/OpenPrinting/libppd/releases/download/2.1.1/libppd-2.1.1.tar.gz",
+      "filename": "libppd-2.1.1.tar.gz",
+      "sha512": "401b91b96d8a0297d1c39c328037459d3ba7a9f78e011f6abc9c7d29f1c2677e001295a58642d94c2786f43116643f59205a6a29490ae40276871f59a82942e3"
     },
     {
       "name": "libproxy",
