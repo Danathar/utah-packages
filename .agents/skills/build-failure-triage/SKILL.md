@@ -152,12 +152,79 @@ When a later stage cannot see what an earlier stage built, check in this order:
 | `No match for argument: <pkg>` where `<pkg>` is a Fedora package | Genuine gap: Fedora predates what the source needs | Import and pin it, like `wayland-protocols` and `accountsservice` |
 | Error inside `/usr/share/cargo/registry/...` or another Fedora-packaged dependency | Fedora packaging bug | Verify it affects more than one Fedora release before calling it release-specific. Do not work around it in the spec |
 | `Bad exit status ... (%check)` needing a bus, display or device | The container lacks a service the test needs | Give the container the service. **Never** skip or disable the test |
+| One test `killed by signal 14 SIGALRM`, no output, at the same second on every run | The test armed its own `alarm(N)` and hung inside it | A hang, not slowness. Prove it by serializing `%check` before theorising about starvation, then root-cause the hang. Raising the alarm only moves the deadline |
 | rpmbuild exit **11**, `*.buildreqs.nosrc.rpm` written | Dynamic BuildRequires (`%generate_buildrequires`, all Rust packages) | Install what the generated SRPM declares, then retry, bounded |
 | `undefined: json.SkipFunc` in vendored `go-json-experiment/json` | Go toolchain's experimental `encoding/json/v2` API drift vs vendored shim | Export `GOEXPERIMENT=nojsonv2` in `%build` to use vendored implementation |
 | Exit **125**, `manifest unknown` | A container image digest was pruned upstream (quay.io repushes `latest` and prunes old digests, several times a day for `fedora:44`) | For the build root: nothing. `prepare` pulls it once by tag and shares it as an artifact (`f1f1e4e`); a per-job registry pull is the bug, and `tests/test_buildroot_sharing.py` rejects it. For any other image still pulled by digest in a job, repin, and note that three repins died in five days before the build root moved to the shared artifact |
 | Exit **125**, log under ~1 KB (transient) | `docker run` failed before the build; infrastructure | Not the package. Re-run once at most |
 | `Signature verification failed` after a clean download | The repo's `gpgkey` is a multi-key bundle and one key in it fails to import | Point `gpgkey` at the single release key. Verify its fingerprint against the one the failing transaction named. **Keep `gpgcheck=1`** |
 | `wrong key?` on a third-party repo whose content the build does not need | A repo signed by a key the image does not trust | Disable that repo for the build |
+
+### A hanging test is not a starved test
+
+`%check` failures that report **no output at all** and land on the same
+wall-clock second every run are hangs. The clue is the signal: `SIGALRM` is
+not something the test runner sends, so the test armed `alarm(N)` on itself
+and never reached the line that would have disarmed it.
+
+PipeWire's `pw-test-endpoint` (issue #132) is the worked example.
+`src/tests/test-endpoint.c` arms `alarm(5)`, then drives five sequential
+`pw_main_loop_run` round trips through a `pw_context` with
+`module-session-manager` loaded. Meson recorded an empty `<failure />` at
+`5.0048s`, which says only that the process died — not why.
+
+The first hypothesis was starvation: one process per core on a 4-vCPU runner.
+Re-running `%check` with `--num-processes 1` disproved it. Serialized, with
+the whole runner to itself, the same test failed at `5.00s`, while in that
+same run `pw-test-filter` was handed **18 seconds** and passed. Wall-clock
+capacity was never the constraint.
+
+The order matters more than the conclusion: **measure before theorising, and
+believe the measurement over the fix you already wrote.** Serializing is a
+diagnostic, not a remedy, and it belongs in a workflow dispatch rather than in
+a recipe. Raising the test's own `alarm()` is not a remedy either — a hung
+test fails at 60 seconds exactly as it fails at 5, having burned 60.
+
+### Touching a recipe is what schedules its rebuild
+
+`prepare` in `.github/workflows/rebuild-rpms.yml` decides the matrix with
+
+```python
+if full or name in changed or name not in published or norm(published[name]) != norm(version):
+```
+
+`changed` is `git diff --name-only BASE_SHA..HEAD` mapped through
+`^packages/([^/]+)/`, and it is tested **before** the published repository is
+consulted. So:
+
+- A package the published repository already carries at the same version is
+  skipped — which is why a broken `%check` can sit unnoticed until something
+  touches the recipe.
+- Restoring a recipe byte-for-byte to the published build's contents does
+  **not** restore the skip. The pull request still changed
+  `packages/<name>/`, so it still schedules the rebuild and still hits the
+  failure. A revert cannot freeze a package; only leaving it alone can.
+- The version compared is the one in `config/upstream-sources.json`, not the
+  spec's `Version:`.
+
+### `tests_nonfatal` is gated, and here is why
+
+Fedora's audio recipes end `%check` with
+`%{!?tests_nonfatal:exit $TESTS_ERROR}`, so one `%global tests_nonfatal 1`
+above it turns any failing suite green while still printing `test failed` into
+the log. For `pipewire` that would have published a desktop image whose audio
+stack had a known hang in it, and nothing downstream would have said so:
+Hummingbird ships no `pipewire` at all, this factory is its only source, and
+`pipewire-libs-extra` — which `config/bluefin-packages.toml` does install —
+carries `Requires: pipewire >= %{version}`, so the recipe cannot be dropped
+either.
+
+`tools/check_suppressed_tests.py` now refuses any new definition of
+`tests_nonfatal`, and `tools/validate.py` runs it. `pulseaudio` is recorded
+there as the one inherited case — Fedora's own, arch- and release-gated, not
+added here. The gate fails if that recipe stops defining it, and
+`tests/test_check_suppressed_tests.py` fails if the recipe is dropped, so the
+exception cannot quietly outlive its reason either way.
 
 ## Verify against primary sources
 
@@ -174,6 +241,9 @@ Do not infer a version from what Rawhide ships or from a package name.
 ## Never
 
 - Skip, disable or quarantine a test to make a build pass.
+- Define `tests_nonfatal`, or any other macro whose only effect is to stop a
+  failing `%check` failing the build.
+- Treat a content-restoring revert as a way to skip a package's rebuild.
 - Push an empty commit, or close and reopen, to re-trigger CI.
 - Report a package as fixed without a green job to point at.
 
@@ -183,6 +253,9 @@ Do not infer a version from what Rawhide ships or from a package name.
 | --- | --- |
 | "The last line of the log says what failed." | It usually says what gave up. The cause is 40-70 lines earlier. Rule 0 exists because acting on the last line produced several wrong conclusions. |
 | "The test is flaky, skip it." | Twice it was the build root missing something mock would have supplied — a system bus for libratbag, `USER` for just. Supply what a real build root has. |
+| "The test is starved, give it the machine." | Measure it. Serialized, `pw-test-endpoint` failed at the same 5.00s while a neighbour was handed 18s and passed. A constant failure time is a hang, and a hang does not care how much machine it gets. |
+| "Reverting the recipe restores the skip." | `changed` is tested before `published` in `prepare`. The pull request touched `packages/<name>/`, so it rebuilds either way. |
+| "This one package can be `tests_nonfatal`, it is only tests." | For `pipewire` it is the audio stack of a desktop image, and this factory is its only source. `tools/check_suppressed_tests.py` refuses it. |
 | "It is a mock configuration problem." | There is no mock. It is installed and never invoked; the root is hand-simulated. See Rule 1. |
 | "The artifact uploaded, so the package built." | Every artifact also carries `work/reports/*.json`, so one file always matches and the upload reports success while shipping no RPM. Rule 4. |
 | "This package is missing from Fedora." | Check whether it is one of ours in an earlier wave, and whether you are searching for a binary name that its source package does not use. |
