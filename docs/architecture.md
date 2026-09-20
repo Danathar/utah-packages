@@ -70,7 +70,8 @@ Whether to finish that design or supersede it is tracked in
 [#43](https://github.com/projectbluefin/utah-packages/issues/43).
 
 `.github/workflows/packit-srpm-pilot.yml` proves the SRPM path but is
-verification-only. Its `discover` job emits the package list from
+verification-only and manual-dispatch-only: its full-inventory fan-out is not
+a PR or merge check and its output is not published. Its `discover` job emits the package list from
 `tools/packit_workflow.py packages`; its per-package `srpm` matrix has
 `fail-fast: false` and is fanned out over chunks of 250 by
 `tools/packit_workflow.py chunks`. The chunking is not cosmetic: GitHub caps a
@@ -172,6 +173,36 @@ the dependency mechanism.
 Inside the Fedora 44 container, the workflow stages the verified source and
 runs `rpmbuild -br` to resolve generated BuildRequires, followed by
 `rpmbuild -ba` to produce the binary RPMs.
+
+### Preserving completed package builds
+
+Atomic repository publication and incremental work preservation are separate.
+The consumer image advances only after the complete repository passes its
+gates. Each successful package build is also written immediately to a
+content-keyed OCI cache, so a later run can restore completed RPMs even when
+the earlier run never published a repository. Restored RPMs follow the same
+stage-artifact and final-gate path as freshly compiled RPMs.
+
+The key binds the recipe, prepared build-root digest, prepare-time factory
+digest, resolved build-root NEVRAs and disttag. Rebuild planning remains
+authoritative: directly changed and stale packages are excluded from reuse.
+The full rationale and invariants are in
+[`docs/skills/package-build-cache.md`](skills/package-build-cache.md).
+
+### Trigger and merge-queue policy
+
+The full factory runs daily at `06:41 UTC` or by manual dispatch. Pull requests
+and pushes to `main` do not launch it; they run the validation workflow below.
+This deliberately batches multiple merges into one coherent repository build
+instead of flooding the Actions queue with one package matrix per commit.
+
+Merge queue is the next step only after repeated factory runs prove that cache
+hits skip compilation and that successful packages survive a failed run. When
+enabled, merge groups should require the fast validation workflow. After a
+batch merges, run the factory once at the final `main` commit (or use the next
+daily run), then atomically publish that batch. The operational rationale is
+part of the cache contract in
+[`docs/skills/package-build-cache.md`](skills/package-build-cache.md#merge-queue-rollout-and-batching).
 
 It is not a mock build, and this is the most misleading thing about the file:
 `build-stage.yml` installs `mock` and never invokes it, then hand-simulates
