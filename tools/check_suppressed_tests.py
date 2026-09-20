@@ -28,6 +28,14 @@ rule did not stop the question being asked.
 from Fedora dist-git rather than added here. It is recorded below so the gate
 passes on the tree as imported while still refusing anything new; the entry is
 a description of what we inherited, not permission to add more.
+
+An allowlist entry therefore covers an exact *number* of definitions, not the
+recipe. Exempting the whole recipe would let the next Fedora import bump add an
+unconditional ``%global tests_nonfatal 1`` to ``pulseaudio`` and sail past the
+gate -- the prose above would still say "not permission to add more" while the
+code said otherwise. Pinning the count makes both directions fail: a definition
+appearing beyond the recorded number, and the recorded number outliving the
+import that earned it.
 """
 from __future__ import annotations
 
@@ -40,61 +48,100 @@ from pathlib import Path
 # itself and appears in every recipe that carries this %check shape.
 DEFINITION = re.compile(r"^\s*%(?:global|define)\s+tests_nonfatal\b")
 
-# package -> why the definition is there. Inherited from Fedora, never ours.
+# package -> (how many definitions were inherited, why they are there).
+# Inherited from Fedora, never ours. The count is the exemption: anything
+# beyond it is a new suppression and fails the gate like any other recipe's.
 INHERITED = {
     # packages/pulseaudio/pulseaudio.spec %check, Fedora's own FIXMEs: one
     # arch-gated (i686 cpu-remap-test, s390x core-util-test) and one
     # release-gated (`%if 0%{?fedora} > 27`) which is therefore always on for
     # the Fedora 44 build root. PulseAudio's suite is effectively advisory
     # here. Raise it with a human before relying on it as a gate.
-    "pulseaudio": "inherited from Fedora dist-git, arch and release gated",
+    "pulseaudio": (2, "inherited from Fedora dist-git, arch and release gated"),
 }
 
 
+def definitions(spec: Path) -> list[tuple[int, str]]:
+    """Return (line number, line) for every ``tests_nonfatal`` definition."""
+    return [
+        (number, line.strip())
+        for number, line in enumerate(spec.read_text().splitlines(), start=1)
+        if DEFINITION.match(line)
+    ]
+
+
 def offenders(root: Path) -> list[tuple[str, int, str]]:
-    """Return (package, line number, line) for every new ``tests_nonfatal``."""
+    """Return (package, line number, line) for every new ``tests_nonfatal``.
+
+    Allowlisted recipes are counted by :func:`drifted` instead, which is what
+    makes the exemption a number rather than a blanket pass for the package.
+    """
     found = []
     for spec in sorted((root / "packages").glob("*/*.spec")):
         package = spec.parent.name
         if package in INHERITED:
             continue
-        for number, line in enumerate(spec.read_text().splitlines(), start=1):
-            if DEFINITION.match(line):
-                found.append((package, number, line.strip()))
+        found.extend(
+            (package, number, line) for number, line in definitions(spec)
+        )
     return found
 
 
-def stale(root: Path) -> list[str]:
-    """Return allowlisted recipes that are present and no longer suppress.
+def drifted(root: Path) -> list[str]:
+    """Return allowlisted recipes whose definition count no longer matches.
 
-    An exception nobody can see is worse than no exception: it keeps claiming
-    a recipe is compromised long after the import that made it so is gone.
+    Both directions are failures. Too few -- down to none -- and the entry is
+    claiming a recipe is compromised long after the import that made it so is
+    gone; an exception nobody can see is worse than no exception. Too many and
+    a definition has been added since the import, which is exactly the thing
+    the gate exists to refuse, so it must not hide behind the entry that
+    documents Fedora's two.
 
-    A package that is absent entirely is **not** stale. ``tools/validate.py``
+    A package that is absent entirely is **not** drift. ``tools/validate.py``
     runs against synthetic trees in its own tests and against whatever root it
     is handed; complaining that a recipe the caller never had is missing would
     make the gate depend on the tree it is pointed at. A dropped recipe is
     caught by ``tests/test_check_suppressed_tests.py`` instead, which asserts
     the entries still exist in this repository.
     """
-    gone = []
-    for package in sorted(INHERITED):
+    reports = []
+    for package, (expected, _reason) in sorted(INHERITED.items()):
         specs = sorted((root / "packages" / package).glob("*.spec"))
         if not specs:
             continue
-        if not any(
-            DEFINITION.match(line)
+        found = [
+            (spec, number)
             for spec in specs
-            for line in spec.read_text().splitlines()
-        ):
-            gone.append(f"{package}: no longer defines tests_nonfatal")
-    return gone
+            for number, _line in definitions(spec)
+        ]
+        if len(found) == expected:
+            continue
+        if not found:
+            reports.append(
+                f"{package}: no longer defines tests_nonfatal; drop the entry"
+            )
+        elif len(found) < expected:
+            reports.append(
+                f"{package}: defines tests_nonfatal {len(found)} time(s), "
+                f"allowlist records {expected}; lower the count to match the "
+                f"import"
+            )
+        else:
+            sites = ", ".join(
+                f"{spec.relative_to(root)}:{number}" for spec, number in found
+            )
+            reports.append(
+                f"{package}: defines tests_nonfatal {len(found)} time(s), "
+                f"allowlist records {expected}; a definition was added after "
+                f"the import ({sites})"
+            )
+    return reports
 
 
 def main(root: Path | None = None) -> int:
     root = root or Path(__file__).resolve().parent.parent
     problems = offenders(root)
-    rotted = stale(root)
+    rotted = drifted(root)
 
     if problems:
         print(
@@ -111,8 +158,9 @@ def main(root: Path | None = None) -> int:
         )
     if rotted:
         print(
-            "\ntools/check_suppressed_tests.py INHERITED is stale; drop these "
-            "entries:",
+            "\ntools/check_suppressed_tests.py INHERITED no longer matches the "
+            "tree. An entry exempts a recorded number of inherited "
+            "definitions, not the whole recipe:",
             file=sys.stderr,
         )
         for entry in rotted:
@@ -122,7 +170,10 @@ def main(root: Path | None = None) -> int:
         return 1
 
     count = len(list((root / "packages").glob("*/*.spec")))
-    inherited = ", ".join(sorted(INHERITED))
+    inherited = ", ".join(
+        f"{package} ({expected})"
+        for package, (expected, _reason) in sorted(INHERITED.items())
+    )
     print(
         f"checked {count} recipes: no new tests_nonfatal "
         f"(inherited: {inherited})"

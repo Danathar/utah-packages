@@ -59,8 +59,13 @@ def main(root: Path = Path(".")) -> int:
         if missing_packit:
             print(f"packages missing Packit config: {', '.join(missing_packit)}")
         return 1
+    # The suppressed-test gate reports its own detail on stderr; say nothing
+    # more here. Printing "validated N source RPMs" and then exiting 1 leaves
+    # a CI log whose last stdout line reads as success.
+    if status:
+        return status
     print(f"validated {len(records)} source RPMs")
-    return status
+    return 0
 
 
 if __name__ == "__main__":

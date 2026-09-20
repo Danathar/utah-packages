@@ -6,7 +6,8 @@ default:
 # Everything CI gates on, minus the builds.
 check: factory-check validate
 
-# Package-factory configuration: provenance, source locks, Packit coverage.
+# Package-factory configuration: provenance, source locks, Packit coverage,
+# and no recipe silencing its own %check with tests_nonfatal.
 validate:
     python3 tools/validate.py
 
