@@ -116,6 +116,8 @@ Obsoletes: cups-filters-devel < 2.0
 Provides: cups-filters-devel = %{epoch}:%{version}-%{release}
 
 Requires: %{name}%{?_isa} = %{epoch}:%{version}-%{release}
+# cupsfilters/pdf.h includes pdfio.h directly
+Requires: pkgconfig(pdfio)
 
 %description devel
 Development files for OpenPrinting cupsfilters library.
