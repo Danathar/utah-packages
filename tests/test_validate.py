@@ -233,8 +233,48 @@ class ValidateScriptTests(unittest.TestCase):
             (wf_dir / "source-pipeline.yml").write_text(
                 "        image: quay.io/packit/packit:latest@sha256:" + "9" * 64 + "\n"
             )
+            # The locked buildroot must still be pinned somewhere, or the gate
+            # has nothing to compare; this test is about the packit pin being
+            # beneath its notice, not about the fedora pin being optional.
+            (wf_dir / "rebuild-rpms.yml").write_text(
+                "      BUILDROOT_IMAGE: quay.io/fedora/fedora:44@sha256:" + "0" * 64 + "\n"
+            )
             result = self.run_validate(root)
             assert result.returncode == 0, result.stderr
+
+    def test_detects_a_workflow_pin_moved_to_a_different_tag(self) -> None:
+        # Keying the comparison on repo:tag made this invisible: fedora:45
+        # shared no key with the locked fedora:44, so the gate skipped it and
+        # validate passed while the two copies named different roots.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root)
+            wf_dir = root / ".github" / "workflows"
+            wf_dir.mkdir(parents=True)
+            (wf_dir / "rebuild-rpms.yml").write_text(
+                "      BUILDROOT_IMAGE: quay.io/fedora/fedora:45@sha256:" + "1" * 64 + "\n"
+            )
+            result = self.run_validate(root)
+            assert result.returncode != 0
+            assert "buildroot drift" in result.stderr
+            assert "quay.io/fedora/fedora:45" in result.stderr
+
+    def test_detects_a_locked_buildroot_no_workflow_pins_at_all(self) -> None:
+        # A deleted pin used to yield no comparison and therefore no failure,
+        # which is the same blindness as a wrong digest: the workflow is no
+        # longer running what the lock attests.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root)
+            wf_dir = root / ".github" / "workflows"
+            wf_dir.mkdir(parents=True)
+            (wf_dir / "rebuild-rpms.yml").write_text(
+                "jobs:\n  prepare:\n    steps:\n      - run: echo no image pin here\n"
+            )
+            result = self.run_validate(root)
+            assert result.returncode != 0
+            assert "buildroot drift" in result.stderr
+            assert "no workflow" in result.stderr
 
     def test_buildroot_drift_is_reported_even_when_a_recipe_is_unlocked(self) -> None:
         # Drift used to hide behind the recipe tally: validate returned 1 for a

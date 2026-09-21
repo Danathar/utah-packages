@@ -31,7 +31,10 @@ consumes are decoration, so do not add one ahead of its caller.
   elsewhere instead of running `rpm` here. The lock is never used as the
   resolved image: with no `--image`, `--digest` or `BUILDROOT_DIGEST` the
   snapshot records `image: null` and warns, so an empty digest cannot quietly
-  re-assert the lock's provenance.
+  re-assert the lock's provenance. Those three are the *only* inputs — in
+  particular the job-wide `BUILDROOT_IMAGE` is not read, because
+  `tools/validate.py` forces it to equal the lock's digest and reading it would
+  re-assert that pin through a second door.
 - `--strict` turns a digest mismatch, and any divergence from a non-empty
   locked package list, into a failure.
 
@@ -50,8 +53,12 @@ drift, so:
 
 - `renovate.json`'s `build-root-image` manager covers both files, and moves
   them in one pull request.
-- `tools/validate.py` fails `just check` when a workflow pins a locked
-  buildroot to a digest the lock does not name.
+- `tools/validate.py` fails `just check` when the workflows do not pin a
+  locked buildroot to exactly what the lock names. The comparison is per
+  *repository*, not per `repo:tag`, so all three ways the copies part company
+  fail: a different digest, a pin retagged to `fedora:45` while the lock says
+  `fedora:44`, and a pin deleted outright. A locked buildroot no workflow pins
+  at all is drift, not an absence of evidence.
 
 Do not resolve that duplication by deleting either copy without moving what
 depends on it: `tests/test_renovate_coverage.py` requires every workflow image

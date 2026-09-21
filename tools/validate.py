@@ -35,22 +35,53 @@ def workflow_image_pins(workflows: Path) -> dict[str, set[tuple[str, str]]]:
 
 
 def check_buildroot_drift(data: dict, workflows: Path) -> None:
-    """Fail when a workflow pins a locked buildroot to a different digest.
+    """Fail when the workflows do not pin a locked buildroot to its digest.
 
     The digest lives in both config/buildroot-lock.json and the workflow that
     pulls it, because Renovate tracks the workflow shape and the manifest needs
     the declarative record. Two copies of one digest drift, so they are
     compared here rather than trusted to stay equal.
+
+    The comparison is per *repository*, not per ``repo:tag``. Keying on the tag
+    made the gate blind in both directions a pin can move: a workflow retagged
+    to ``fedora:45@X`` while the lock still says ``fedora:44@Y`` shared no key
+    with the lock and was silently skipped, and a pin deleted outright left
+    nothing to compare at all. Either way the two copies had parted company and
+    validate still passed. A locked buildroot must now be pinned by some
+    workflow, at the same tag and the same digest.
+
+    Nothing is required when ``.github/workflows`` is absent (a source tree
+    with no workflows pins nothing), which is what ``workflow_image_pins``
+    already reports as an empty map.
     """
+    if not workflows.is_dir():
+        return
     pins = workflow_image_pins(workflows)
+    by_repository: dict[str, set[tuple[str, str, str]]] = {}
+    for base, found in pins.items():
+        repository = base.rpartition(":")[0] or base
+        for workflow, digest in found:
+            by_repository.setdefault(repository, set()).add((workflow, base, digest))
     for name, buildroot in data["buildroots"].items():
         image = buildroot["image"]
         base, _, digest = image.partition("@")
-        for workflow, found in sorted(pins.get(base, set())):
-            if found != digest:
+        repository = base.rpartition(":")[0] or base
+        candidates = by_repository.get(repository, set())
+        if not candidates:
+            raise SystemExit(
+                f"buildroot drift: {name} is locked to {base}@{digest} but no "
+                f"workflow in {workflows} pins {repository}"
+            )
+        for workflow, found_base, found_digest in sorted(candidates):
+            if found_base != base:
                 raise SystemExit(
                     f"buildroot drift: {name} is locked to {base}@{digest} but "
-                    f"{workflow} pins {base}@{found}"
+                    f"{workflow} pins {found_base}@{found_digest}"
+                )
+            if found_digest != digest:
+                raise SystemExit(
+                    f"buildroot drift: {name} is locked to {base}@{digest} but "
+                    f"{workflow} pins {base}@{found_digest}"
                 )
 
 

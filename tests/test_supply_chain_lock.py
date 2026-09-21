@@ -17,14 +17,16 @@ from tools.source_pipeline import main as source_pipeline_main
 
 class BuildrootLockTests(unittest.TestCase):
     def setUp(self) -> None:
-        # The prepare job exports BUILDROOT_IMAGE for the whole job and runs
-        # these tests inside it, and cmd_snapshot reads that variable as the
-        # running image when no --image/--digest is given. Strip the
-        # factory's variables so the tests see only what they pass.
+        # cmd_snapshot still reads BUILDROOT_DIGEST when no --digest is given,
+        # and the prepare job exports one for the whole job, so strip it to see
+        # only what each test passes. BUILDROOT_IMAGE and ACTUAL_BUILDROOT_IMAGE
+        # are deliberately left alone: they are no longer read at all, and
+        # test_cmd_snapshot_ignores_the_workflows_buildroot_image_variable
+        # exports one to prove it.
         isolated = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"BUILDROOT_IMAGE", "ACTUAL_BUILDROOT_IMAGE", "BUILDROOT_DIGEST"}
+            if key != "BUILDROOT_DIGEST"
         }
         patcher = patch.dict(os.environ, isolated, clear=True)
         patcher.start()
@@ -159,6 +161,43 @@ class BuildrootLockTests(unittest.TestCase):
             self.assertEqual(data["locked_image"], locked_img)
             self.assertIn("buildroot image unknown", stderr.getvalue())
             self.assertNotIn(locked_img, json.dumps(data["image"]))
+
+    def test_cmd_snapshot_ignores_the_workflows_buildroot_image_variable(self) -> None:
+        # The prepare job exports BUILDROOT_IMAGE for the whole job, and
+        # validate.py forces that variable to equal the lock's digest. Reading
+        # it as the resolved image would re-assert the lock's own pin through a
+        # second door, so it is not read: running inside that environment with
+        # nothing resolved still records null.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "lock.json"
+            locked_img = "quay.io/fedora/fedora:44@sha256:" + "c" * 64
+            lock.write_text(
+                json.dumps({
+                    "schema": 1,
+                    "buildroots": {"fedora-44": {"image": locked_img, "packages": []}},
+                })
+            )
+            inventory = root / "buildroot.rpms"
+            inventory.write_text("glibc\t2.41-1.fc44\tx86_64\n")
+            out = root / "snapshot.json"
+            stderr = io.StringIO()
+            env = {
+                "BUILDROOT_IMAGE": locked_img,
+                "ACTUAL_BUILDROOT_IMAGE": "quay.io/fedora/fedora:44@sha256:" + "d" * 64,
+            }
+            with patch.dict(os.environ, env), patch("sys.stderr", stderr):
+                rc = buildroot_main([
+                    "--config", str(lock),
+                    "snapshot", "fedora-44",
+                    "--packages-from", str(inventory),
+                    "--output", str(out),
+                ])
+            self.assertEqual(rc, 0)
+            data = json.loads(out.read_text())
+            self.assertIsNone(data["image"])
+            self.assertEqual(data["locked_image"], locked_img)
+            self.assertIn("buildroot image unknown", stderr.getvalue())
 
     def test_cmd_snapshot_strict_refuses_an_unknown_image(self) -> None:
         # --strict is the operator asking whether the root is exactly what was

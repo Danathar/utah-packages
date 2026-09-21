@@ -14,6 +14,9 @@ build root is a Fedora container with no interpreter this factory may assume.
 The lock is never used as the resolved image: with no ``--image``,
 ``--digest`` or ``BUILDROOT_DIGEST`` the snapshot records ``image: null`` and
 warns, so an empty digest cannot quietly re-assert the lock's provenance.
+Those three are the only inputs. The job-wide ``BUILDROOT_IMAGE`` is not read,
+because ``tools/validate.py`` forces it to equal the lock's digest and reading
+it would re-assert that pin through a second door.
 
 A mismatch between the resolved and locked image warns, matching the workflow:
 ``quay.io/fedora/fedora:44`` is republished several times a day and failing on
@@ -135,12 +138,12 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     # fallback: it says which bytes the rebuild meant to use, and writing it
     # here would attest a root the packages may not have been built in. With
     # nothing resolved the snapshot records null and says so.
-    actual_image = (
-        getattr(args, "image", None)
-        or (f"{base_ref}@{digest}" if digest else None)
-        or os.environ.get("ACTUAL_BUILDROOT_IMAGE")
-        or os.environ.get("BUILDROOT_IMAGE")
-        or None
+    # No environment fallback either: the workflow exports BUILDROOT_IMAGE for
+    # the whole job and validate.py forces it to equal the lock's digest, so
+    # reading it here would re-assert the lock's pin through a second door --
+    # the same attestation this command exists to avoid making.
+    actual_image = getattr(args, "image", None) or (
+        f"{base_ref}@{digest}" if digest else None
     )
     payload = {
         "schema": 1,
