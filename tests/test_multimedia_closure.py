@@ -13,6 +13,8 @@ it stops matching what the tool would write today.
 from __future__ import annotations
 
 import gzip
+import importlib
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -181,8 +183,63 @@ class PublishedNevraTests(unittest.TestCase):
 
     def test_a_repodata_directory_with_no_primary_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ClosureError, "primary.xml.gz"):
+            with self.assertRaisesRegex(ClosureError, "no primary.xml under"):
                 published_nevra(Path(directory))
+
+    @unittest.skipIf(
+        importlib.util.find_spec("zstandard") is None,
+        "zstandard is installed in the publish job, not in every checkout",
+    )
+    def test_a_zstd_compressed_primary_is_read(self) -> None:
+        # createrepo_c >= 1.0 defaults primary compression to zstd. The
+        # workflow installs createrepo-c unpinned via apt-get, so a runner
+        # image bump renames this file without anything here changing. Globbing
+        # *primary.xml.gz turned that into "no primary.xml" -- which, before
+        # the publish step became continue-on-error, failed the publish job.
+        zstandard = importlib.import_module("zstandard")
+        with tempfile.TemporaryDirectory() as directory:
+            repodata = Path(directory)
+            (repodata / "abc-primary.xml.zst").write_bytes(
+                zstandard.ZstdCompressor().compress(PRIMARY.encode())
+            )
+            found = published_nevra(repodata)
+        self.assertEqual(found["libjxl"], "libjxl-1:0.11.2-3.hum1.bfin.x86_64")
+
+    def test_an_uncompressed_primary_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repodata = Path(directory)
+            (repodata / "abc-primary.xml").write_text(PRIMARY)
+            found = published_nevra(repodata)
+        self.assertEqual(found["libjxl"], "libjxl-1:0.11.2-3.hum1.bfin.x86_64")
+
+    def test_repomd_names_the_primary_when_several_are_present(self) -> None:
+        # repomd.xml is the index; the glob is only the fallback. A repository
+        # carrying a superseded primary alongside the current one must be read
+        # through the index, not through whatever sorts first.
+        with tempfile.TemporaryDirectory() as directory:
+            repodata = Path(directory)
+            stale = PRIMARY.replace("0.11.2", "0.0.1")
+            (repodata / "aaa-primary.xml.gz").write_bytes(gzip.compress(stale.encode()))
+            (repodata / "zzz-primary.xml.gz").write_bytes(
+                gzip.compress(PRIMARY.encode())
+            )
+            (repodata / "repomd.xml").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<repomd xmlns="http://linux.duke.edu/metadata/repo">\n'
+                '  <data type="primary">\n'
+                '    <location href="repodata/zzz-primary.xml.gz"/>\n'
+                "  </data>\n"
+                "</repomd>\n"
+            )
+            found = published_nevra(repodata)
+        self.assertEqual(found["libjxl"], "libjxl-1:0.11.2-3.hum1.bfin.x86_64")
+
+    def test_an_unreadable_compression_is_named_rather_than_guessed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repodata = Path(directory)
+            (repodata / "abc-primary.xml.bz2").write_bytes(b"not really bz2")
+            with self.assertRaisesRegex(ClosureError, "unsupported primary.xml"):
+                published_nevra(repodata)
 
 
 class RepositoryClosureTests(unittest.TestCase):

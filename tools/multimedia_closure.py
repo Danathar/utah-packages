@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import io
 import json
 import re
 import sys
@@ -166,6 +167,42 @@ def evr_key(epoch: str, version: str, release: str) -> tuple:
     return (int(epoch or 0), runs(version), runs(release))
 
 
+def primary_xml(repodata: Path) -> bytes:
+    """The repository's decompressed primary.xml, whatever it is compressed with.
+
+    `repomd.xml` is the index and names the file; the compression is
+    createrepo_c's choice, not ours. Globbing `*primary.xml.gz` hard-coded the
+    gzip default of createrepo_c < 1.0 -- an unpinned `apt-get install
+    createrepo-c` on a runner-image bump moves that to zstd, renames the file,
+    and the glob finds nothing. `tools/rebuild_matrix.py` already reads the
+    published repository this way; this is the same read against a local tree.
+    """
+    index = repodata / "repomd.xml"
+    candidates: list[Path] = []
+    if index.is_file():
+        href = re.search(r'<location href="([^"]*primary[^"]*)"', index.read_text())
+        if href:
+            named = repodata / Path(href.group(1)).name
+            if named.is_file():
+                candidates = [named]
+    if not candidates:
+        candidates = sorted(repodata.glob("*primary.xml*"))
+    if not candidates:
+        raise ClosureError(f"no primary.xml under {repodata}")
+
+    path = candidates[0]
+    raw = path.read_bytes()
+    if path.suffix == ".gz":
+        return gzip.decompress(raw)
+    if path.suffix == ".zst":
+        import zstandard
+
+        return zstandard.ZstdDecompressor().stream_reader(io.BytesIO(raw)).read()
+    if path.suffix == ".xml":
+        return raw
+    raise ClosureError(f"unsupported primary.xml compression: {path.name}")
+
+
 def published_nevra(repodata: Path) -> dict[str, str]:
     """Binary package name -> NEVRA, read from a repository's primary.xml.
 
@@ -174,10 +211,7 @@ def published_nevra(repodata: Path) -> dict[str, str]:
     report that silently dropped it would name a package that cannot be
     installed by the string it prints.
     """
-    candidates = sorted(repodata.glob("*primary.xml.gz"))
-    if not candidates:
-        raise ClosureError(f"no primary.xml.gz under {repodata}")
-    primary = gzip.decompress(candidates[0].read_bytes())
+    primary = primary_xml(repodata)
     best: dict[str, tuple] = {}
     found: dict[str, str] = {}
     for package in ElementTree.fromstring(primary).iter(f"{{{COMMON_NS}}}package"):

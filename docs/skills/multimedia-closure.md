@@ -95,6 +95,19 @@ projectbluefin/utah-packages#24.
   included. A recipe on disk that no run has built is not coverage, and the
   report says so by leaving the NEVRA null.
 
+  The file is located through `repomd.xml` and decompressed by extension —
+  gzip, zstd or plain. Do not glob for `primary.xml.gz`: that is createrepo_c
+  &lt; 1.0's default, the workflow installs `createrepo-c` unpinned via
+  `apt-get`, and createrepo_c ≥ 1.0 writes zstd. `tools/rebuild_matrix.py`
+  reads the published repository the same way.
+- **The publish-time report does not gate the publish, and that is enforced,
+  not merely intended.** The step in `rebuild-rpms.yml` carries
+  `continue-on-error: true`. Without it, the step's exit code fails the publish
+  job before the consumer-transaction validation and the image push — and the
+  `--repodata` half runs only there, so no PR check can catch a failure in it.
+  If you want the closure to block a publish, that is a deliberate widening:
+  say so in the PR, and take the flag off on purpose rather than by accident.
+
 ## Adding to the inventory
 
 A new name in Bluefin's `[multimedia_overrides]`, or a new package on the

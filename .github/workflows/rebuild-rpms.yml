@@ -59,7 +59,7 @@ jobs:
       # correct when the run started. So the tag is pulled once here and the
       # bytes are shared with every job; a mismatch against this digest is
       # reported, not fatal, because failing on it recreates that outage.
-      BUILDROOT_IMAGE: quay.io/fedora/fedora:44@sha256:e7d398c0a67572b33a43260102f9135ab79b6b8d95efca91faa5179d83b2cdf0
+      BUILDROOT_IMAGE: quay.io/fedora/fedora:44@sha256:a65912511863a7d25139928fb283da04367f2224f37313e1cbb59d44fa02e755
     outputs:
       buildroot_digest: ${{ steps.buildroot.outputs.digest }}
       factory_image: ${{ steps.factory_image.outputs.image }}
@@ -741,7 +741,14 @@ jobs:
       # filled in here and published beside the RPMs rather than committed
       # stale. Reporting only: the inventory itself is gated in validate.yml,
       # and widening what blocks a publish is a decision for a human.
+      #
+      # `continue-on-error` is what makes that true. Without it the step's exit
+      # code gates the publish job, which would put the whole publish behind a
+      # failure mode no PR check can catch: the --repodata half runs only here,
+      # and published_nevra raises when it cannot read the repository's
+      # primary.xml. A report that can stop a publish is not a report.
       - name: Report the Bluefin multimedia closure against this repository
+        continue-on-error: true
         run: |
           {
             echo "### Bluefin multimedia closure"
