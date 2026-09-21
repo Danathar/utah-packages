@@ -321,13 +321,15 @@ class BuildrootLockTests(unittest.TestCase):
                 "truncated\tline\n"
             )
             out = root / "snapshot.json"
-            rc = buildroot_main([
-                "--config", str(lock),
-                "snapshot", "fedora-44",
-                "--packages-from", str(inventory),
-                "--digest", "sha256:" + "c" * 64,
-                "--output", str(out),
-            ])
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr):
+                rc = buildroot_main([
+                    "--config", str(lock),
+                    "snapshot", "fedora-44",
+                    "--packages-from", str(inventory),
+                    "--digest", "sha256:" + "c" * 64,
+                    "--output", str(out),
+                ])
             self.assertEqual(rc, 0)
             data = json.loads(out.read_text())
             # Sorted by name, epoch kept in the NEVRA, malformed line dropped.
@@ -335,9 +337,69 @@ class BuildrootLockTests(unittest.TestCase):
                 [package["nevra"] for package in data["packages"]],
                 ["glibc-2.41-1.fc44.x86_64", "openssl-libs-1:3.5.7-1.hum1.x86_64"],
             )
+            # Dropped, but not silently: the snapshot is an attestation input,
+            # so an inventory it could not fully read has to say so.
+            self.assertIn("under-reports the root's contents", stderr.getvalue())
+            self.assertIn("'truncated\\tline'", stderr.getvalue())
             # The digest the run resolved, rebuilt into a full reference.
             self.assertEqual(data["image"], locked_img)
             self.assertEqual(data["locked_image"], locked_img)
+
+    def test_cmd_snapshot_strict_refuses_an_inventory_it_could_not_fully_parse(
+        self,
+    ) -> None:
+        # --strict asks "is this root exactly what was locked?". A capture with
+        # unparsable lines cannot answer that: the missing packages might be
+        # the divergence. Non-strict still warns and proceeds -- the scheduled
+        # rebuild records what it saw -- but strict must refuse.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "lock.json"
+            locked_img = "quay.io/fedora/fedora:44@sha256:" + "c" * 64
+            lock.write_text(
+                json.dumps({
+                    "schema": 1,
+                    "buildroots": {
+                        "fedora-44": {
+                            "image": locked_img,
+                            "packages": [{"nevra": "glibc-2.41-1.fc44.x86_64"}],
+                        }
+                    },
+                })
+            )
+            inventory = root / "buildroot.rpms"
+            inventory.write_text("glibc\t2.41-1.fc44\tx86_64\ntruncated\tline\n")
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr):
+                rc = buildroot_main([
+                    "--config", str(lock),
+                    "snapshot", "fedora-44",
+                    "--packages-from", str(inventory),
+                    "--digest", "sha256:" + "c" * 64,
+                    "--output", str(root / "snapshot.json"),
+                    "--strict",
+                ])
+            self.assertEqual(rc, 1)
+            self.assertIn("buildroot inventory incomplete", stderr.getvalue())
+
+    def test_compare_reports_a_lock_entry_without_a_nevra_instead_of_crashing(
+        self,
+    ) -> None:
+        # load_lock only checks that `packages` is a list; the per-entry nevra
+        # requirement lives in tools/validate.py. Running this module
+        # standalone against a hand-edited lock therefore reaches compare()
+        # with None in the expected set, where it used to die inside
+        # ", ".join(...) with a TypeError. The gate failed either way, but a
+        # traceback does not tell an operator which entry to fix.
+        errors = compare(
+            [{"nevra": "glibc-2.41-1.fc44.x86_64"}, {"name": "openssl-libs"}, {}],
+            [{"nevra": "glibc-2.41-1.fc44.x86_64"}],
+        )
+        self.assertTrue(any("malformed lock" in e for e in errors))
+        self.assertTrue(any("2 locked package entries" in e for e in errors))
+        # The malformed entries must not be reported as missing packages --
+        # they are a lock defect, not a divergence in the build root.
+        self.assertFalse(any("missing locked buildroot packages" in e for e in errors))
 
     def test_cmd_snapshot_fails_when_the_inventory_is_absent(self) -> None:
         # A build root that printed nothing must not produce an empty snapshot

@@ -37,6 +37,17 @@ consumes are decoration, so do not add one ahead of its caller.
   re-assert that pin through a second door.
 - `--strict` turns a digest mismatch, and any divergence from a non-empty
   locked package list, into a failure.
+- An inventory line that is not three tab-separated fields is dropped, but
+  never silently: `parse_packages` warns on stderr naming the dropped lines,
+  and `--strict` refuses the snapshot outright. A truncated or corrupted
+  `rpm -qa` capture makes the snapshot under-report the root's contents, and a
+  snapshot that under-reports cannot answer the question `--strict` asks — the
+  packages it could not read might be the divergence.
+- A lock entry with no `nevra` is reported as a malformed lock, not as a
+  missing package. `load_lock` only checks that `packages` is a list (the
+  per-entry requirement lives in `tools/validate.py`), so running this module
+  standalone against a hand-edited lock can reach the comparison with an
+  unusable entry; it names the defect instead of raising.
 
 **The rebuild does not pass `--strict`, deliberately.**
 `quay.io/fedora/fedora:44` is republished several times a day and each previous

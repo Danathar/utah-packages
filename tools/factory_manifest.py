@@ -20,7 +20,7 @@ def rpm_files(root: Path) -> list[str]:
     return sorted(str(path.relative_to(root)) for path in root.rglob("*.rpm"))
 
 
-def reports(root: Path, prefix: str | None = None) -> list[object]:
+def reports(root: Path) -> list[object]:
     reports_dir = root / "reports"
     targets = [reports_dir] if reports_dir.is_dir() else [root]
     values = []
@@ -28,8 +28,6 @@ def reports(root: Path, prefix: str | None = None) -> list[object]:
     for directory in targets:
         for path in sorted(directory.glob("*.json")):
             if path.name == "manifest.json":
-                continue
-            if prefix and not path.name.startswith(prefix):
                 continue
             if path in seen:
                 continue
