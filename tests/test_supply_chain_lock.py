@@ -11,7 +11,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.buildroot_lock import buildroot, compare, load_lock, main as buildroot_main
-from tools.factory_manifest import main as manifest_main, source_verification
+from tools.factory_manifest import (
+    buildroot_provenance,
+    main as manifest_main,
+    source_verification,
+)
+from tools.publish_gate import load_workflow
 from tools.source_pipeline import main as source_pipeline_main
 
 
@@ -480,6 +485,114 @@ class FactoryManifestTests(unittest.TestCase):
             self.assertEqual(len(data["buildroots"]), 1)
             self.assertEqual(data["source_verification"]["counts"], {"sha512": 1})
             self.assertEqual(data["source_verification"]["checksum_only"], ["demo"])
+            # Nothing to judge snapshots against, so nothing was withheld.
+            self.assertEqual(data["buildroots_discarded"], [])
+
+
+    def _manifest_with_snapshot(self, directory: str, snapshot: dict, digest: str):
+        """Run the manifest over a repository holding exactly one snapshot."""
+        root = Path(directory)
+        repo = root / "repo"
+        (repo / "reports").mkdir(parents=True)
+        (repo / "reports" / "buildroot-fedora-44.json").write_text(json.dumps(snapshot))
+        lock = root / "lock.json"
+        lock.write_text(
+            json.dumps({
+                "schema": 1,
+                "buildroots": {
+                    "fedora-44": {
+                        "image": "quay.io/fedora/fedora:44@sha256:" + "a" * 64,
+                        "packages": [],
+                    }
+                },
+            })
+        )
+        out = root / "manifest.json"
+        stderr = io.StringIO()
+        with patch("sys.stderr", stderr):
+            rc = manifest_main([
+                "--repository", str(repo),
+                "--build-list", "[]",
+                "--buildroot-lock", str(lock),
+                "--buildroot-digest", digest,
+                "--output", str(out),
+            ])
+        self.assertEqual(rc, 0)
+        return json.loads(out.read_text()), stderr.getvalue()
+
+    def test_manifest_will_not_attest_a_snapshot_from_another_run(self) -> None:
+        # The publish job seeds repository/ from the previously published
+        # factory image, and that image carries the last run's
+        # reports/buildroot-*.json. On a cleanup-only run preflight is skipped
+        # and writes no replacement, so the stale snapshot used to be folded
+        # into `buildroots` -- the manifest attesting a root this run never
+        # measured, which is the exact failure class the lock exists to close.
+        stale = "sha256:" + "b" * 64
+        run = "sha256:" + "c" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            data, stderr = self._manifest_with_snapshot(
+                directory,
+                {
+                    "schema": 1,
+                    "name": "fedora-44",
+                    "image": f"quay.io/fedora/fedora:44@{stale}",
+                    "packages": [{"nevra": "glibc-2.41-1.fc44.x86_64"}],
+                },
+                run,
+            )
+        self.assertEqual(data["buildroots"], [])
+        # Withheld, but named: "no root was measured" and "a root was measured
+        # and not attested" are different claims to whoever reads this after a
+        # bad package ships.
+        self.assertEqual(len(data["buildroots_discarded"]), 1)
+        discarded = data["buildroots_discarded"][0]
+        self.assertEqual(discarded["name"], "fedora-44")
+        self.assertEqual(discarded["report"], "reports/buildroot-fedora-44.json")
+        self.assertEqual(discarded["run_digest"], run)
+        self.assertIn(stale, discarded["image"])
+        self.assertIn("not attesting buildroot snapshot", stderr)
+
+    def test_manifest_keeps_the_snapshot_this_run_resolved(self) -> None:
+        run = "sha256:" + "c" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            data, stderr = self._manifest_with_snapshot(
+                directory,
+                {
+                    "schema": 1,
+                    "name": "fedora-44",
+                    "image": f"quay.io/fedora/fedora:44@{run}",
+                    "packages": [{"nevra": "glibc-2.41-1.fc44.x86_64"}],
+                },
+                run,
+            )
+        self.assertEqual(len(data["buildroots"]), 1)
+        self.assertEqual(data["buildroots_discarded"], [])
+        self.assertEqual(stderr, "")
+
+    def test_manifest_will_not_attest_a_snapshot_with_no_resolved_image(self) -> None:
+        # buildroot_lock records image null when the run resolved no digest.
+        # That is an honest snapshot, but it is not evidence of which root the
+        # packages were built in, so it cannot be attested either.
+        with tempfile.TemporaryDirectory() as directory:
+            data, _ = self._manifest_with_snapshot(
+                directory,
+                {"schema": 1, "name": "fedora-44", "image": None, "packages": []},
+                "sha256:" + "c" * 64,
+            )
+        self.assertEqual(data["buildroots"], [])
+        self.assertEqual(
+            data["buildroots_discarded"][0]["reason"],
+            "snapshot records no resolved image",
+        )
+
+    def test_buildroot_provenance_judges_nothing_without_a_run_digest(self) -> None:
+        # Standalone use, and the run whose own digest resolution failed: with
+        # nothing to compare against, discarding would be a guess. The workflow
+        # closes that door by pruning the seeded reports instead.
+        snapshots = [{"name": "fedora-44", "image": None}]
+        measured, discarded = buildroot_provenance(snapshots, "")
+        self.assertEqual(measured, snapshots)
+        self.assertEqual(discarded, [])
 
 
     def test_source_verification_names_the_checksum_only_exceptions(self) -> None:
@@ -503,6 +616,46 @@ class FactoryManifestTests(unittest.TestCase):
         summary = source_verification([{"package": "old", "result": "accepted"}])
         self.assertEqual(summary["counts"], {"unknown": 1})
         self.assertEqual(summary["checksum_only"], ["old"])
+
+
+class PublishSeedHygieneTests(unittest.TestCase):
+    """The workflow half of the same property, enforced rather than described."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.steps = load_workflow()["jobs"]["publish"]["steps"]
+
+    def _index(self, predicate) -> int:
+        return next(i for i, step in enumerate(self.steps) if predicate(step))
+
+    def test_seed_step_prunes_the_previous_runs_buildroot_snapshots(self) -> None:
+        seed = self._index(
+            lambda step: "seed repository from the prepare-time factory image"
+            in str(step.get("name", ""))
+        )
+        self.assertIn(
+            "rm -f repository/reports/buildroot-*.json", self.steps[seed]["run"]
+        )
+        # The prune has to happen before this run's own snapshot is downloaded,
+        # or it deletes the fresh one instead of the stale one.
+        download = self._index(
+            lambda step: (step.get("with") or {}).get("name") == "preflight-buildroot"
+        )
+        self.assertLess(seed, download)
+
+    def test_both_manifest_writes_pass_the_runs_buildroot_digest(self) -> None:
+        writes = [
+            step
+            for step in self.steps
+            if "tools/factory_manifest.py" in str(step.get("run", ""))
+        ]
+        self.assertEqual(len(writes), 2)
+        for step in writes:
+            self.assertIn("--buildroot-digest", step["run"])
+            self.assertEqual(
+                step["env"]["BUILDROOT_DIGEST"],
+                "${{ needs.prepare.outputs.buildroot_digest }}",
+            )
 
 
 class SourcePipelineSignatureTests(unittest.TestCase):

@@ -709,6 +709,17 @@ jobs:
             podman cp "$container:/repository/." repository/
             podman rm "$container"
           fi
+          # The seed carries the previous run's reports back with it, and one
+          # of those is an attestation rather than a description: a buildroot
+          # snapshot says which root *this* run built in. The preflight
+          # download below normally overwrites it, but preflight is skipped
+          # outright on a cleanup-only run and its download is
+          # continue-on-error, so the stale file would survive into the
+          # manifest as a root nothing here measured. Drop it; only this run's
+          # artifact may put one back. The source reports are left alone --
+          # they describe the RPMs the seed brought with them, which are still
+          # in the repository being published.
+          rm -f repository/reports/buildroot-*.json
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         if: needs.prepare.outputs.build_list != '[]'
         with:
@@ -832,11 +843,13 @@ jobs:
       - name: Emit factory manifest before container build
         env:
           BUILD_LIST: ${{ needs.prepare.outputs.build_list }}
+          BUILDROOT_DIGEST: ${{ needs.prepare.outputs.buildroot_digest }}
         run: |
           python3 tools/factory_manifest.py \
             --repository repository \
             --build-list "$BUILD_LIST" \
             --buildroot-lock config/buildroot-lock.json \
+            --buildroot-digest "$BUILDROOT_DIGEST" \
             --output repository/manifest.json
       # The repository as an OCI image, which is how everything else in this
       # ecosystem ships build output: Utah Containerfile already pulls
@@ -920,6 +933,7 @@ jobs:
       - name: Record published OCI digest in factory manifest
         env:
           BUILD_LIST: ${{ needs.prepare.outputs.build_list }}
+          BUILDROOT_DIGEST: ${{ needs.prepare.outputs.buildroot_digest }}
           OCI_REF: ${{ steps.oci.outputs.ref }}
           OCI_DIGEST: ${{ steps.oci.outputs.digest }}
         run: |
@@ -927,6 +941,7 @@ jobs:
             --repository repository \
             --build-list "$BUILD_LIST" \
             --buildroot-lock config/buildroot-lock.json \
+            --buildroot-digest "$BUILDROOT_DIGEST" \
             --output repository/manifest.json \
             --oci-ref "$OCI_REF" \
             --oci-digest "$OCI_DIGEST"

@@ -122,3 +122,31 @@ the OCI digest exists — and uploads it as the `factory-manifest` artifact.
 Reports are classified by shape, not by filename: a buildroot snapshot is
 `schema`+`name`+`packages`, a source report carries `package`. Unrelated JSON
 published beside the repository is not folded in.
+
+### A buildroot snapshot has to belong to the run that publishes it
+
+`buildroots` is the one part of the manifest that attests rather than
+describes: it says which root *this* run built in. That claim has a way of
+going stale. Publish seeds `repository/` from the previously published factory
+image, that image was built `COPY repository /repository` with the last run's
+`reports/` inside it, and preflight — which writes the replacement — is skipped
+outright when `build_list` is `[]` and downloads `continue-on-error`. So a
+cleanup-only run, or any run whose preflight failed, can reach the manifest
+step with last week's snapshot on disk and nothing marking it as someone
+else's.
+
+Two things stop it, and they are independent on purpose:
+
+* the seed step deletes `repository/reports/buildroot-*.json` straight after
+  the `podman cp`, so only this run's `preflight-buildroot` artifact can put
+  one back. Source reports are left alone — they describe the seeded RPMs,
+  which really are in the repository being published;
+* `factory_manifest.py --buildroot-digest` keeps a snapshot only when the image
+  it resolved carries the digest `prepare` resolved. Anything else is named
+  under `buildroots_discarded` with a reason, and warned about on stderr.
+
+Withheld, not silently dropped: "no root was measured" and "a root was measured
+and not attested" are different answers to the question asked after a bad
+package ships. With no `--buildroot-digest` — standalone use, or a run whose
+own digest resolution failed — nothing can be judged and nothing is discarded;
+that case is covered by the prune, not by the tool.
