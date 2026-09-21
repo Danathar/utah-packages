@@ -1,0 +1,113 @@
+---
+name: multimedia-closure
+description: >-
+  How Bluefin's multimedia override and codec transaction is inventoried here,
+  why half of it is invisible to the manifest, and what to check before
+  claiming a codec requirement is satisfied. Load before adding a recipe for a
+  codec, syncing config/bluefin-packages.toml, or answering "does the factory
+  cover Bluefin's multimedia?".
+metadata:
+  type: reference
+---
+
+# The Bluefin multimedia closure
+
+Bluefin's codec surface is assembled by
+[`build_files/base/03-packages.sh`](https://github.com/projectbluefin/bluefin/blob/main/build_files/base/03-packages.sh),
+and only half of it is in a file this factory mirrors.
+
+## The half the manifest does not carry
+
+`config/bluefin-packages.toml` is a copy of Bluefin's `base.toml`, kept
+separately so its sections can be diffed against upstream. `base.toml` holds
+`[multimedia_overrides]` — the twelve packages Bluefin distro-syncs from
+negativo17 and then version-locks — and nothing else about codecs.
+
+The rest is written inline on the `dnf5 install` line in the same script:
+
+```sh
+ffmpeg{,-libs} libavcodec @multimedia \
+gstreamer1-plugins-{bad-free,bad-free-libs,good,base} \
+lame{,-libs} libfdk-aac libjxl ffmpegthumbnailer
+```
+
+Nothing here had ever read that line. `tools/rawhide_sources.py` imports what
+the manifest names, so ffmpeg, lame and jpegxl arrived by other routes and
+ffmpegthumbnailer had never arrived at all — and no tool could say which,
+because "the multimedia requirements" existed as a shell line and not as data.
+
+`config/multimedia-closure.toml` is that line, expanded, with the
+`[multimedia_overrides]` half read out of the Bluefin manifest rather than
+copied. `tools/multimedia_closure.py --check` is the gate; it also writes
+`reports/multimedia-closure.json`, which `tests/test_multimedia_closure.py`
+holds to the current tree.
+
+## `@multimedia` is the larger half
+
+`@multimedia` is a comps group, and a comps group is two separate questions:
+
+- **Does the name resolve?** Against this factory, never. Groups live in
+  repository metadata, and `createrepo_c` writes none, so the group is a
+  standing exception no amount of building can clear.
+- **Are its members built?** That is the measurable question, and the group
+  expands to sixteen of them — more names than the explicit install line
+  carries. Six were already covered by pipewire and wireplumber; five are
+  tracked exceptions; `PackageKit-gstreamer-plugin` is excluded by the very
+  install line that asks for the group, via `-x PackageKit*`.
+
+Conditional members are not requirements. `gstreamer-plugins-espeak` is
+conditional on espeak, which Utah does not install, so it is recorded in
+`conditional_members` and inventoried nowhere else — counting it would
+manufacture a gap.
+
+## Package parity is not codec parity
+
+Bluefin uses negativo17 to get builds with the patent-encumbered codecs
+enabled. Every codec recipe here is Fedora's free flavour: `packages/ffmpeg`
+carries `%bcond all_codecs 0` and `%global pkg_suffix -free`, and
+`fdk-aac-free` is the subset with the encumbered profiles removed.
+
+So the closure can be complete and the codecs still narrower than Bluefin's.
+Say which one is being claimed. Flipping `all_codecs` is a licensing decision
+for a human — see [`repeated-mistakes.md`](repeated-mistakes.md) #6 for what a
+bcond moved without its reasoning costs — and it is the open question on
+projectbluefin/utah-packages#24.
+
+## Before claiming a requirement is satisfied
+
+- **Name the binary, resolve the source.** `libjxl` is built by `jpegxl`,
+  `libva-intel-media-driver` by `intel-media-driver-free`, `libavcodec` by
+  `ffmpeg`. Searching `packages/` for the binary name finds nothing and proves
+  nothing; this is the trap [`../contributing.md`](../contributing.md) opens
+  with.
+- **A rename is not a gap, and not a pass either.** Fedora's `ffmpeg-free`
+  carries no `Provides: ffmpeg`. It supplies every soname `ffmpeg` does, so
+  consumers resolve; a transaction naming the literal string does not. Record
+  it under `[equivalent]` with the reason, never under `[built]`.
+- **Check the family version before importing a plugin.** Fedora's
+  `gstreamer1-plugin-libav` requires `gstreamer1-devel >= %{version}` and is a
+  release ahead of the gstreamer1 family pinned here, so importing it alone
+  adds a BuildRequires nothing satisfies — [`repeated-mistakes.md`](repeated-mistakes.md)
+  #2, a package and its family pinned separately.
+- **"Present in the factory repository" means published, not committed.**
+  `tools/multimedia_closure.py --repodata <dir>` reads a published
+  repository's `primary.xml` and fills in each requirement's NEVRA, epoch
+  included. A recipe on disk that no run has built is not coverage, and the
+  report says so by leaving the NEVRA null.
+
+## Adding to the inventory
+
+A new name in Bluefin's `[multimedia_overrides]`, or a new package on the
+install line, fails `--check` until it has an entry:
+
+- `[built]` — a recipe here emits a binary of exactly that name.
+- `[equivalent]` — a recipe here emits the same capability under another name.
+  Needs `source`, `binary` and `reason`.
+- `[exception]` — nothing here satisfies it. Needs `reason`, and the reason
+  should say what would close it, or that nothing will.
+
+Then regenerate the report:
+
+```sh
+python3 tools/multimedia_closure.py --output reports/multimedia-closure.json
+```

@@ -14,6 +14,15 @@ image = "quay.io/hummingbird-community/bootc-os:latest@sha256:c5539f9ed4d93aab6b
 # baseline transaction first proves Utah's currently enabled contract; adding
 # a knowingly incomplete future contract here would prevent even diagnostic
 # baseline publication without identifying which policy was being tested.
+#
+# "Incomplete" is measurable now rather than assumed:
+# `config/multimedia-closure.toml` inventories every requirement of Bluefin's
+# multimedia transaction and `reports/multimedia-closure.json` maps each one to
+# its factory source, so what joining this list would add is a list of names
+# and not a guess. It stays out until a rebuild publishes a NEVRA for every
+# non-exception requirement -- `tools/multimedia_closure.py --repodata` reports
+# that count on each publish -- and until the codec-parity question in
+# [policy] of that file has an answer.
 sections = [
   "fedora",
   "fedora_v43",
@@ -27,11 +36,6 @@ packages = [
   "NetworkManager-wifi",
   "wpa_supplicant",
   "wireless-regdb",
-  # Fingerprint login. Bluefin gets fprintd from the Fedora base image, so it is
-  # absent from Bluefin's live build_files/packages/base.toml; Utah builds it so
-  # fingerprint login works on the delivered image (utah#145).
-  "fprintd",
-  "fprintd-pam",
   # Hummingbird ships the avahi daemon but not libdaemon, which it links; the
   # factory builds libdaemon so geoclue has a daemon to talk to (utah#104).
   "avahi",
