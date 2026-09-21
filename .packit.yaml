@@ -1000,6 +1000,12 @@ packages:
     downstream_package_name: libfyaml
     paths:
       - packages/libfyaml
+  libgda:
+    specfile_path: libgda.spec
+    upstream_package_name: libgda
+    downstream_package_name: libgda
+    paths:
+      - packages/libgda
   libgexiv2:
     specfile_path: libgexiv2.spec
     upstream_package_name: libgexiv2
@@ -1144,6 +1150,12 @@ packages:
     downstream_package_name: liboping
     paths:
       - packages/liboping
+  libpcap:
+    specfile_path: libpcap.spec
+    upstream_package_name: libpcap
+    downstream_package_name: libpcap
+    paths:
+      - packages/libpcap
   libpciaccess:
     specfile_path: libpciaccess.spec
     upstream_package_name: libpciaccess
@@ -1330,6 +1342,12 @@ packages:
     downstream_package_name: libxshmfence
     paths:
       - packages/libxshmfence
+  linux-atm:
+    specfile_path: linux-atm.spec
+    upstream_package_name: linux-atm
+    downstream_package_name: linux-atm
+    paths:
+      - packages/linux-atm
   linux-firmware:
     specfile_path: linux-firmware.spec
     upstream_package_name: linux-firmware
@@ -1552,6 +1570,12 @@ packages:
     downstream_package_name: pixman
     paths:
       - packages/pixman
+  ppp:
+    specfile_path: ppp.spec
+    upstream_package_name: ppp
+    downstream_package_name: ppp
+    paths:
+      - packages/ppp
   protobuf:
     specfile_path: protobuf.spec
     upstream_package_name: protobuf
