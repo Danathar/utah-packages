@@ -634,6 +634,17 @@ jobs:
       # on `python3: can't open file .../tools/runtime_contract.py` the moment
       # the seed step stopped failing first and let it get that far.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # The multimedia closure report below reads this repository's
+      # primary.xml, whose compression is createrepo_c's choice. Today
+      # ubuntu-24.04 ships createrepo_c 0.17.3 and writes gzip, so the zstd
+      # branch of primary_xml() is dormant -- but createrepo_c >= 1.0 defaults
+      # to zstd, and `createrepo-c` is installed unpinned from apt below, so a
+      # runner-image bump reaches it. Without this the report would then die
+      # on ModuleNotFoundError under `continue-on-error: true`, i.e. silently,
+      # which is the one thing the report must not do. `prepare` installs the
+      # same pin for the same reason.
+      - name: Install zstandard
+        run: pip install --disable-pip-version-check --quiet 'zstandard==0.25.0'
       - name: Verify and seed repository from the prepare-time factory image
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

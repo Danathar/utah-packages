@@ -16,8 +16,10 @@ import gzip
 import importlib
 import importlib.util
 import json
+import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from tools.multimedia_closure import (
@@ -204,6 +206,42 @@ class PublishedNevraTests(unittest.TestCase):
             )
             found = published_nevra(repodata)
         self.assertEqual(found["libjxl"], "libjxl-1:0.11.2-3.hum1.bfin.x86_64")
+
+    def test_a_zstd_primary_without_the_module_names_the_cause(self) -> None:
+        # The zstd branch is dormant on ubuntu-24.04 (createrepo_c 0.17.3
+        # writes gzip), so the test above skips wherever the module is absent
+        # and no gate would notice a missing install. This one runs
+        # everywhere: with the module hidden, the failure must arrive as a
+        # ClosureError main() can report, not a ModuleNotFoundError traceback
+        # that `continue-on-error: true` would swallow in the publish step.
+        with tempfile.TemporaryDirectory() as directory:
+            repodata = Path(directory)
+            (repodata / "abc-primary.xml.zst").write_bytes(b"not really zstd")
+            with unittest.mock.patch.dict(sys.modules, {"zstandard": None}):
+                with self.assertRaisesRegex(ClosureError, "zstandard module"):
+                    published_nevra(repodata)
+
+    def test_the_publish_job_installs_zstandard(self) -> None:
+        # The job that runs `--repodata` must be able to read a zstd primary,
+        # and no unit test can prove that from the tool alone: the zstd branch
+        # is dormant on today's runner image, so a missing install shows up
+        # only on the runner-image bump that makes it live. Assert the wiring
+        # instead. `prepare` carries the same install for the same reason.
+        from tools.publish_gate import load_workflow
+
+        workflow = load_workflow()
+        for job in ("prepare", "publish"):
+            runs = " ".join(
+                str(step.get("run", ""))
+                for step in workflow["jobs"][job]["steps"]
+            )
+            # assertTrue, not assertIn: assertIn would print the job's entire
+            # run block as the haystack and bury the message.
+            self.assertTrue(
+                "zstandard" in runs,
+                f"the {job} job no longer installs zstandard; a zstd-compressed "
+                "primary.xml would fail there with the module missing",
+            )
 
     def test_an_uncompressed_primary_is_read(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

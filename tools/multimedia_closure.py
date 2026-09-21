@@ -195,7 +195,17 @@ def primary_xml(repodata: Path) -> bytes:
     if path.suffix == ".gz":
         return gzip.decompress(raw)
     if path.suffix == ".zst":
-        import zstandard
+        try:
+            import zstandard
+        except ImportError as error:  # pragma: no cover - environment-dependent
+            # Raised as a ClosureError so main() names the cause instead of
+            # letting a ModuleNotFoundError traceback out. The publish step
+            # runs under `continue-on-error: true`, where an uncaught
+            # exception is indistinguishable from "nothing to report".
+            raise ClosureError(
+                f"{path.name} is zstd-compressed but the zstandard module is "
+                "not installed; add `pip install zstandard` to this job"
+            ) from error
 
         return zstandard.ZstdDecompressor().stream_reader(io.BytesIO(raw)).read()
     if path.suffix == ".xml":
