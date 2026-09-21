@@ -259,6 +259,43 @@ cache never replaces rebuild selection or final repository gates, and stale or
 directly changed packages never reuse it. Read
 [`package-build-cache.md`](package-build-cache.md) before changing this path.
 
+## 16. An observability tool that parses one line of external output crashes the whole run
+
+**What happened.** `tools/scan_rawhide_state.py`'s `query()` unpacked the first
+non-empty repoquery line into four tab-separated fields:
+`name, evr, arch, sourcerpm = lines[0].split("\t", 3)`. dnf5 writes warnings and
+progress to stdout under some conditions, and a package whose query returns
+something unexpected does the same, so a single line that was not in that exact
+shape raised `ValueError: not enough values to unpack` and took down the scan of
+all ~300 packages on a scheduled run (issue #172, red nightly since at least
+09-19). The existing unit tests only fed well-formed output, so the crash only
+ever surfaced on the live workflow.
+
+**Rule.** A scan or report tool that consumes the stdout of an external command
+(dnf repoquery, rpm, a parser) must skip any line that is not the expected shape
+and pick the first line that is, logging the discarded line to stderr rather
+than crashing. Treat external command output as untrusted: one malformed line
+must never lose the whole report, and the discarded line must be visible so a
+systematically malformed query is noticed. When the skipped-line guard restates
+a validation that another function already performs, validate with *that*
+function's grammar (here `rawhide_sources.SRPM_NAME`), not a weaker stand-in
+like a `.src.rpm` suffix check: a weaker guard lets garbage into state and moves
+the crash downstream instead of removing it. A record that parses cleanly but is
+then dropped by a *selection* rule (here the x86_64/noarch arch preference) must
+be logged too — a silent drop is the same invisibility as a silent parse
+failure. Cover the mixed-good/bad case in a
+unit test that mocks the command — tests that only feed clean output let this
+class of bug reach a scheduled run.
+
+The lesson is not "dnf writes warnings to stdout". It is that #99 assumed dnf4
+`--qf` semantics on dnf5: dnf5 expands only `\n`, not `\t`, in the query format,
+so a `\t` is copied through as two characters and the per-arch records glue into
+one line, making `query()` return `None` for every package and turning the red
+nightly into a green nightly that reports nothing. The fix emits real tabs and a
+trailing newline and prefers the x86_64/noarch record over `lines[0]` (i686
+sorts first). Pin the real tab in a test so a return to a dnf4-style escape
+cannot happen unseen.
+
 ## Quick checks before pushing a fix
 
 - [ ] Does `git log --oneline -- <file>` show this file being fixed for the
