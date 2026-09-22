@@ -78,10 +78,16 @@ class ArchitectureCountTests(unittest.TestCase):
         )
 
     def test_hand_assigned_stage_count_matches_the_inventory(self) -> None:
-        declared, total = re.search(
+        match = re.search(
             r"(\d+) of (\d+) packages carry a hand-assigned `stage`",
             DOC.read_text(),
-        ).groups()
+        )
+        self.assertIsNotNone(
+            match,
+            "docs/architecture.md no longer states the hand-assigned stage count "
+            "in the form 'N of M packages carry a hand-assigned `stage`'",
+        )
+        declared, total = match.groups()
         locks = source_locks(ROOT)
         self.assertEqual(
             int(declared),
