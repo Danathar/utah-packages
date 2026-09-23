@@ -112,6 +112,12 @@ packages:
     downstream_package_name: cdparanoia
     paths:
       - packages/cdparanoia
+  cjson:
+    specfile_path: cjson.spec
+    upstream_package_name: cjson
+    downstream_package_name: cjson
+    paths:
+      - packages/cjson
   codec2:
     specfile_path: codec2.spec
     upstream_package_name: codec2
@@ -196,6 +202,12 @@ packages:
     downstream_package_name: double-conversion
     paths:
       - packages/double-conversion
+  enca:
+    specfile_path: enca.spec
+    upstream_package_name: enca
+    downstream_package_name: enca
+    paths:
+      - packages/enca
   enchant2:
     specfile_path: enchant2.spec
     upstream_package_name: enchant2
@@ -214,6 +226,12 @@ packages:
     downstream_package_name: evtest
     paths:
       - packages/evtest
+  exempi:
+    specfile_path: exempi.spec
+    upstream_package_name: exempi
+    downstream_package_name: exempi
+    paths:
+      - packages/exempi
   exiv2:
     specfile_path: exiv2.spec
     upstream_package_name: exiv2
@@ -304,6 +322,12 @@ packages:
     downstream_package_name: fzf
     paths:
       - packages/fzf
+  game-music-emu:
+    specfile_path: game-music-emu.spec
+    upstream_package_name: game-music-emu
+    downstream_package_name: game-music-emu
+    paths:
+      - packages/game-music-emu
   gcr:
     specfile_path: gcr.spec
     upstream_package_name: gcr
@@ -340,6 +364,12 @@ packages:
     downstream_package_name: geocode-glib
     paths:
       - packages/geocode-glib
+  giflib:
+    specfile_path: giflib.spec
+    upstream_package_name: giflib
+    downstream_package_name: giflib
+    paths:
+      - packages/giflib
   git:
     specfile_path: git.spec
     upstream_package_name: git
@@ -940,6 +970,12 @@ packages:
     downstream_package_name: libcloudproviders
     paths:
       - packages/libcloudproviders
+  libcue:
+    specfile_path: libcue.spec
+    upstream_package_name: libcue
+    downstream_package_name: libcue
+    paths:
+      - packages/libcue
   libcupsfilters:
     specfile_path: libcupsfilters.spec
     upstream_package_name: libcupsfilters
@@ -982,6 +1018,18 @@ packages:
     downstream_package_name: libdrm
     paths:
       - packages/libdrm
+  libdvdnav:
+    specfile_path: libdvdnav.spec
+    upstream_package_name: libdvdnav
+    downstream_package_name: libdvdnav
+    paths:
+      - packages/libdvdnav
+  libdvdread:
+    specfile_path: libdvdread.spec
+    upstream_package_name: libdvdread
+    downstream_package_name: libdvdread
+    paths:
+      - packages/libdvdread
   libebur128:
     specfile_path: libebur128.spec
     upstream_package_name: libebur128
@@ -1042,6 +1090,12 @@ packages:
     downstream_package_name: libglvnd
     paths:
       - packages/libglvnd
+  libgsf:
+    specfile_path: libgsf.spec
+    upstream_package_name: libgsf
+    downstream_package_name: libgsf
+    paths:
+      - packages/libgsf
   libgtop2:
     specfile_path: libgtop2.spec
     upstream_package_name: libgtop2
@@ -1066,6 +1120,12 @@ packages:
     downstream_package_name: libgweather
     paths:
       - packages/libgweather
+  libgxps:
+    specfile_path: libgxps.spec
+    upstream_package_name: libgxps
+    downstream_package_name: libgxps
+    paths:
+      - packages/libgxps
   libheif:
     specfile_path: libheif.spec
     upstream_package_name: libheif
@@ -1132,6 +1192,18 @@ packages:
     downstream_package_name: libmanette
     paths:
       - packages/libmanette
+  libmediainfo:
+    specfile_path: libmediainfo.spec
+    upstream_package_name: libmediainfo
+    downstream_package_name: libmediainfo
+    paths:
+      - packages/libmediainfo
+  libmodplug:
+    specfile_path: libmodplug.spec
+    upstream_package_name: libmodplug
+    downstream_package_name: libmodplug
+    paths:
+      - packages/libmodplug
   libnfs:
     specfile_path: libnfs.spec
     upstream_package_name: libnfs
@@ -1168,12 +1240,24 @@ packages:
     downstream_package_name: libogg
     paths:
       - packages/libogg
+  libopenmpt:
+    specfile_path: libopenmpt.spec
+    upstream_package_name: libopenmpt
+    downstream_package_name: libopenmpt
+    paths:
+      - packages/libopenmpt
   liboping:
     specfile_path: liboping.spec
     upstream_package_name: liboping
     downstream_package_name: liboping
     paths:
       - packages/liboping
+  libosinfo:
+    specfile_path: libosinfo.spec
+    upstream_package_name: libosinfo
+    downstream_package_name: libosinfo
+    paths:
+      - packages/libosinfo
   libpcap:
     specfile_path: libpcap.spec
     upstream_package_name: libpcap
@@ -1222,6 +1306,12 @@ packages:
     downstream_package_name: libratbag
     paths:
       - packages/libratbag
+  librist:
+    specfile_path: librist.spec
+    upstream_package_name: librist
+    downstream_package_name: librist
+    paths:
+      - packages/librist
   librsvg2:
     specfile_path: librsvg2.spec
     upstream_package_name: librsvg2
@@ -1372,6 +1462,12 @@ packages:
     downstream_package_name: libxshmfence
     paths:
       - packages/libxshmfence
+  libzen:
+    specfile_path: libzen.spec
+    upstream_package_name: libzen
+    downstream_package_name: libzen
+    paths:
+      - packages/libzen
   linux-atm:
     specfile_path: linux-atm.spec
     upstream_package_name: linux-atm
@@ -1810,6 +1906,12 @@ packages:
     downstream_package_name: squashfs-tools
     paths:
       - packages/squashfs-tools
+  srt:
+    specfile_path: srt.spec
+    upstream_package_name: srt
+    downstream_package_name: srt
+    paths:
+      - packages/srt
   startup-notification:
     specfile_path: startup-notification.spec
     upstream_package_name: startup-notification
