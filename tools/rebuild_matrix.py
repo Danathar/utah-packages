@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.package_inventory import source_locks
 from tools.rebuild_plan import (
     cacheable,
     stale_from_primary,
@@ -76,7 +77,7 @@ def changed_inventory(base_sha: str, paths: list[str]) -> set[str]:
         # Nothing can be proven unchanged, so prove nothing and let the
         # published comparison decide on its own.
         return set()
-    after = json.loads((ROOT / INVENTORY).read_text())
+    after = {"packages": list(source_locks(ROOT).values())}
     return changed_entries(before, after)
 
 
@@ -123,7 +124,8 @@ def fetch_published(base_url: str) -> dict[str, tuple[str, str]]:
 
 
 def main() -> int:
-    config = json.loads((ROOT / INVENTORY).read_text())
+    locks = source_locks(ROOT)
+    config = {"packages": list(locks.values())}
     hummingbird_owned = set(
         json.loads((ROOT / HUMMINGBIRD_OWNED).read_text())["sources"]
     )
