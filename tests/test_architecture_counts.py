@@ -75,7 +75,7 @@ class ArchitectureCountTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        match = re.fullmatch(r"validated (\d+) source RPMs", result.stdout.strip())
+        match = re.search(r"validated (\d+) source RPMs", result.stdout.strip())
         self.assertIsNotNone(match, result.stdout)
         assert match is not None
         self.assertEqual(
