@@ -116,5 +116,73 @@ class PublishGateWorkflowTests(unittest.TestCase):
         self.assertNotIn("if", steps[validate])
 
 
+class SeedImageVerificationTests(unittest.TestCase):
+    """The seed step must not copy RPMs out of an unverified image.
+
+    Regression for the finding that the seed step pulled ghcr.io/.../:latest
+    and extracted every RPM in it without checking the cosign signature this
+    same workflow attaches at publish time -- so one poisoned push to the
+    mutable tag would be carried forward and re-signed as verified output on
+    every subsequent run.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = load_workflow()
+        cls.steps = cls.workflow["jobs"]["publish"]["steps"]
+
+    def _step_script(self, name_substring):
+        step = next(
+            step for step in self.steps
+            if name_substring in str(step.get("name", ""))
+        )
+        return step["run"]
+
+    def test_seed_step_verifies_cosign_signature(self):
+        script = self._step_script("Verify and seed repository")
+        self.assertIn("cosign verify", script)
+        self.assertIn("--certificate-oidc-issuer", script)
+        self.assertIn("--certificate-identity", script)
+
+    def test_seed_step_verifies_the_pulled_digest_not_the_tag(self):
+        script = self._step_script("Verify and seed repository")
+        verify_line = next(
+            line for line in script.splitlines()
+            if line.strip().startswith("cosign verify")
+        )
+        # Must verify the resolved ref@digest variable, never a bare
+        # "image:tag" -- the tag can move again after the check.
+        self.assertIn("$current", verify_line)
+        self.assertNotIn(":$tag", verify_line)
+
+    def test_cosign_verify_precedes_container_copy(self):
+        script = self._step_script("Verify and seed repository")
+        self.assertLess(
+            script.index("cosign verify"),
+            script.index("podman cp"),
+            "the image must be verified before anything is copied out of it",
+        )
+
+    def test_cosign_is_installed_before_the_seed_step(self):
+        names = [str(step.get("name", "")) for step in self.steps]
+        install = next(i for i, name in enumerate(names) if name == "Install cosign")
+        seed = next(
+            i for i, name in enumerate(names)
+            if "Verify and seed repository" in name
+        )
+        self.assertLess(install, seed)
+
+    def test_seed_step_logs_in_where_cosign_will_look(self):
+        step = next(
+            step for step in self.steps
+            if "Verify and seed repository" in str(step.get("name", ""))
+        )
+        # cosign reads $DOCKER_CONFIG/config.json, not podman's own auth
+        # file, so the login must be written there for verification to see
+        # any credentials the pull used.
+        self.assertIn("DOCKER_CONFIG", step.get("env", {}))
+        self.assertIn("--authfile", step["run"])
+
+
 if __name__ == "__main__":
     unittest.main()

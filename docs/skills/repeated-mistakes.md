@@ -330,6 +330,32 @@ tokens to the specific matrix package that requires it
 compiler cache credentials into build environments for packages that do not
 consume them.
 
+## 19. A trusted seed must be verified, not just fresh
+
+**What happened.** Entry 14 made the publish job's seed step compare the
+resolved digest against the prepare-time witness, which stops an *older* run
+from overwriting a newer one. It does nothing about a *bad* image being
+current: the step still pulled `ghcr.io/<owner>/utah-packages:latest` (or the
+branch tag) and copied every RPM out of it with no check that the image was
+ever signed by this workflow. Anyone able to push to the GHCR package once --
+a leaked token, a compromised workflow holding `packages: write`, or a
+registry-side compromise -- could plant RPMs in the tag and have every
+subsequent run copy them forward, sign `repomd.xml` over them, and publish a
+new signed image containing them: freshness was being confused for trust.
+
+**Rule.** Before creating a container or copying anything out of a seed
+image, `cosign verify` the digest actually pulled -- never the mutable tag,
+which can move again after the check -- against this same workflow's own
+keyless OIDC identity. `latest` is only ever published from `refs/heads/main`;
+a branch tag is only ever published by this workflow running on that branch.
+Pin `--certificate-identity` to whichever ref actually matched, not a regex
+wide enough to accept either -- a regex scoped to `main` alone breaks every
+branch-tag seed, since those are signed under their own ref. `cosign verify`
+reads `$DOCKER_CONFIG/config.json`, not podman's own auth file, so a
+`podman login` without a matching `--authfile` is invisible to it (the
+"Publish the repository" step hit the same split; see its comment on
+`DOCKER_CONFIG`).
+
 ## Quick checks before pushing a fix
 
 - [ ] Does `git log --oneline -- <file>` show this file being fixed for the
