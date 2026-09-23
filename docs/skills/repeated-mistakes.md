@@ -296,6 +296,25 @@ trailing newline and prefers the x86_64/noarch record over `lines[0]` (i686
 sorts first). Pin the real tab in a test so a return to a dnf4-style escape
 cannot happen unseen.
 
+## 17. CUPS 2.x and cups-filters 2.x package split
+
+**What happened.** Historically, `cups-filters` contained all filters, PPD
+helpers, braille printing, and `cups-browsed`. In upstream 2.x, this was
+split across separate source repositories: `libcupsfilters`, `libppd`,
+`cups-filters`, `cups-browsed`, and `braille-printer-app`. Fedora Rawhide
+dist-git packages each independently. Attempting to build `cups-filters`
+or `cups-browsed` without importing `libcupsfilters` and `libppd` fails build
+dependency resolution (`pkgconfig(libcupsfilters)` and `pkgconfig(libppd)`).
+Furthermore, `cups-filters` only weakly recommends `braille-printer-app`, which
+carries heavy dependencies (`liblouis`, `ImageMagick`, etc.) not in the
+Hummingbird base.
+
+**Rule.** When importing cups-filters 2.x or cups-browsed into the factory,
+import `libcupsfilters` (stage 0), `libppd` (stage 1, depends on
+libcupsfilters), and `cups-filters` / `cups-browsed` (stage 2, depending on both
+libraries). Do not pull `braille-printer-app` into the core printing closure
+unless Braille printing is explicitly required.
+
 ## Quick checks before pushing a fix
 
 - [ ] Does `git log --oneline -- <file>` show this file being fixed for the
