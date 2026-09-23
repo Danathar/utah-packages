@@ -121,7 +121,8 @@
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/bluez/bluez-5.87.tar.xz/sha512/f1e3bede9b0bbc3b5cfe9fed5f7945be7cbcf7a299729b5f82f1cba4bbbd6c4d2e372c9685f61458dfc374c9dfee352b6c2933a2c0d7727b8171ff394055e169/bluez-5.87.tar.xz",
       "filename": "bluez-5.87.tar.xz",
       "sha512": "f1e3bede9b0bbc3b5cfe9fed5f7945be7cbcf7a299729b5f82f1cba4bbbd6c4d2e372c9685f61458dfc374c9dfee352b6c2933a2c0d7727b8171ff394055e169",
-      "stage": 1
+      "stage": 1,
+      "buildroot_icu77": true
     },
     {
       "name": "cairo",
@@ -169,6 +170,22 @@
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/containerd/containerd-2.3.4.tar.gz/sha512/cf8be1759399fb9e3b7c84d353a876b8f599b74fb3094a288333cf0b61a743b74484cbde7eab96576b214c92caf7de65ef94813bb3670e079585c371a438f6b4/containerd-2.3.4.tar.gz",
       "filename": "containerd-2.3.4.tar.gz",
       "sha512": "cf8be1759399fb9e3b7c84d353a876b8f599b74fb3094a288333cf0b61a743b74484cbde7eab96576b214c92caf7de65ef94813bb3670e079585c371a438f6b4"
+    },
+    {
+      "name": "cups-browsed",
+      "version": "2.1.1",
+      "stage": 2,
+      "url": "https://github.com/OpenPrinting/cups-browsed/releases/download/2.1.1/cups-browsed-2.1.1.tar.gz",
+      "filename": "cups-browsed-2.1.1.tar.gz",
+      "sha512": "e0c611f9d43acd86561c2cb7cd23f27846620f8a96ce41dc8e97459d85e993aa501f9f35de411a5437bde92fdea74514a506942496ea2623378c6ab383d6aa8f"
+    },
+    {
+      "name": "cups-filters",
+      "version": "2.0.1",
+      "stage": 2,
+      "url": "https://github.com/OpenPrinting/cups-filters/releases/download/2.0.1/cups-filters-2.0.1.tar.gz",
+      "filename": "cups-filters-2.0.1.tar.gz",
+      "sha512": "b5d7b8f5a89a6a6bba0e861dd3c3263195be75996d22129d123f325f6bff74fbabf22f2ee2d953908ffb8294d825af5568af6695896c76ef4082ae98cd19c42c"
     },
     {
       "name": "cups-pk-helper",
@@ -230,7 +247,8 @@
       "version": "2.8.19",
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/enchant2/enchant-2.8.19.tar.gz/sha512/0aebd255d589637d0947f8832a194457f561e6000fbfdcff57e487f85203b5ddc77458d1eaad84fd8765052264ff2d9b1dbaf5fbce0ca194aa097f4944b302db/enchant-2.8.19.tar.gz",
       "filename": "enchant-2.8.19.tar.gz",
-      "sha512": "0aebd255d589637d0947f8832a194457f561e6000fbfdcff57e487f85203b5ddc77458d1eaad84fd8765052264ff2d9b1dbaf5fbce0ca194aa097f4944b302db"
+      "sha512": "0aebd255d589637d0947f8832a194457f561e6000fbfdcff57e487f85203b5ddc77458d1eaad84fd8765052264ff2d9b1dbaf5fbce0ca194aa097f4944b302db",
+      "buildroot_icu77": true
     },
     {
       "name": "evolution-data-server",
@@ -581,6 +599,16 @@
       "sha512": "a9d2edbe1cea710e10ef1ea8059a45cf5689bace43b5d2a6861809e863a6de7114b4763db8df3916ad6202c9967f48f7997acd0810a86e5e88dea7e0be88b585"
     },
     {
+      "name": "google-noto-color-emoji-fonts",
+      "version": "2.051",
+      "url": "https://github.com/googlefonts/noto-emoji/archive/8998f5dd683424a73e2314a8c1f1e359c19e8742.tar.gz#/noto-emoji-8998f5d.tar.gz",
+      "filename": "noto-emoji-8998f5d.tar.gz",
+      "sha512": "41ec1520dbb244451446479e0107cb8d06d893fc7045ec83f7d2dc853291c98fb44f18b1c5cf8d10e4011c40f46542f3038bd667cc216f5affa3a93eb65df85d",
+      "fallback_urls": [
+        "https://src.fedoraproject.org/repo/pkgs/rpms/google-noto-color-emoji-fonts/noto-emoji-8998f5d.tar.gz/sha512/41ec1520dbb244451446479e0107cb8d06d893fc7045ec83f7d2dc853291c98fb44f18b1c5cf8d10e4011c40f46542f3038bd667cc216f5affa3a93eb65df85d/noto-emoji-8998f5d.tar.gz"
+      ]
+    },
+    {
       "name": "google-noto-sans-cjk-vf-fonts",
       "version": "2.004",
       "url": "https://github.com/googlefonts/noto-cjk/releases/download/Sans2.004/01_NotoSansCJK-OTF-VF.zip",
@@ -659,7 +687,8 @@
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/gstreamer1-plugins-bad-free/gst-plugins-bad-1.28.6.tar.xz/sha512/233c88e50af78204f1a707eba67350df1140d4293ae1bfe7a6f64ee9ce423968c4d9a515aed397cc88f302f69c86e11f3d6a7d43c406dbd30e34febc934b83d8/gst-plugins-bad-1.28.6.tar.xz",
       "filename": "gst-plugins-bad-1.28.6.tar.xz",
       "sha512": "233c88e50af78204f1a707eba67350df1140d4293ae1bfe7a6f64ee9ce423968c4d9a515aed397cc88f302f69c86e11f3d6a7d43c406dbd30e34febc934b83d8",
-      "stage": 4
+      "stage": 4,
+      "buildroot_icu77": true
     },
     {
       "name": "gstreamer1-plugins-base",
@@ -707,7 +736,8 @@
       "version": "4.8.4",
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/gtksourceview4/gtksourceview-4.8.4.tar.xz/sha512/9e4262e52a92b3a052f33b799622d4fd4dcc7cc5355df12f160d0e60a6d6c135bc52f07eb40c06b357d5d74bec7228d4ec545a69ee5af69429d4170cc1e2243d/gtksourceview-4.8.4.tar.xz",
       "filename": "gtksourceview-4.8.4.tar.xz",
-      "sha512": "9e4262e52a92b3a052f33b799622d4fd4dcc7cc5355df12f160d0e60a6d6c135bc52f07eb40c06b357d5d74bec7228d4ec545a69ee5af69429d4170cc1e2243d"
+      "sha512": "9e4262e52a92b3a052f33b799622d4fd4dcc7cc5355df12f160d0e60a6d6c135bc52f07eb40c06b357d5d74bec7228d4ec545a69ee5af69429d4170cc1e2243d",
+      "buildroot_icu77": true
     },
     {
       "name": "gum",
@@ -1242,6 +1272,14 @@
       ]
     },
     {
+      "name": "libcupsfilters",
+      "version": "2.2.1",
+      "stage": 0,
+      "url": "https://github.com/OpenPrinting/libcupsfilters/releases/download/2.2.1/libcupsfilters-2.2.1.tar.gz",
+      "filename": "libcupsfilters-2.2.1.tar.gz",
+      "sha512": "9d4b34cd56fa9d6ad1307779458e231e5474fc046edb298d13ba9037574ed91a1ed2f13d479ab0028e1d213dfba867917c503cb926b9e605f74a29037ac026f0"
+    },
+    {
       "name": "libdaemon",
       "version": "0.14",
       "url": "http://0pointer.de/lennart/projects/libdaemon/libdaemon-0.14.tar.gz",
@@ -1346,7 +1384,8 @@
       "sha512": "adf81589b4c27e3a229cd95cf19df329678677b4c860ea1944bcb774795fc442a288e6de7e2a88efad88e645b5586b7cf9443d2932c703f177e41a582c65fd52",
       "fallback_urls": [
         "https://src.fedoraproject.org/repo/pkgs/rpms/libgda/libgda-6.0.0.tar.xz/sha512/adf81589b4c27e3a229cd95cf19df329678677b4c860ea1944bcb774795fc442a288e6de7e2a88efad88e645b5586b7cf9443d2932c703f177e41a582c65fd52/libgda-6.0.0.tar.xz"
-      ]
+      ],
+      "buildroot_icu77": true
     },
     {
       "name": "libgexiv2",
@@ -1573,6 +1612,14 @@
       "stage": 5
     },
     {
+      "name": "libppd",
+      "version": "2.1.1",
+      "stage": 1,
+      "url": "https://github.com/OpenPrinting/libppd/releases/download/2.1.1/libppd-2.1.1.tar.gz",
+      "filename": "libppd-2.1.1.tar.gz",
+      "sha512": "401b91b96d8a0297d1c39c328037459d3ba7a9f78e011f6abc9c7d29f1c2677e001295a58642d94c2786f43116643f59205a6a29490ae40276871f59a82942e3"
+    },
+    {
       "name": "libproxy",
       "version": "0.5.12",
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/libproxy/0.5.12.tar.gz/sha512/19ffd1755e9ebfc645555e248020f9025ae81e93e73cbbb2583bff4495f7794b02ab1ef8ce944fa28e7604f5abf3e7e327c4966d21789648bd38f3d1c2cccecd/0.5.12.tar.gz",
@@ -1630,7 +1677,8 @@
       "version": "3.7.2",
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/libsoup3/libsoup-3.7.2.tar.xz/sha512/89642fe052557754e151f0d705fa6bca135bc01b1f5e3d2b1f8da67b708a9ffba4b40f923b6a1019a6e2fa28fedb7dc30bed64f98613e4b7139e98dc197fca49/libsoup-3.7.2.tar.xz",
       "filename": "libsoup-3.7.2.tar.xz",
-      "sha512": "89642fe052557754e151f0d705fa6bca135bc01b1f5e3d2b1f8da67b708a9ffba4b40f923b6a1019a6e2fa28fedb7dc30bed64f98613e4b7139e98dc197fca49"
+      "sha512": "89642fe052557754e151f0d705fa6bca135bc01b1f5e3d2b1f8da67b708a9ffba4b40f923b6a1019a6e2fa28fedb7dc30bed64f98613e4b7139e98dc197fca49",
+      "buildroot_icu77": true
     },
     {
       "name": "libtalloc",
@@ -1707,7 +1755,8 @@
       "version": "1.5",
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/libvdpau/libvdpau-1.5.tar.bz2/sha512/7affb14874431eba1be6e8634fcbb6247cbf6956fb88116e06e60de30a7852a407e8598176a369c2ba4bfaef4be58727e51d4bc390f705991ac83d660f611ff5/libvdpau-1.5.tar.bz2",
       "filename": "libvdpau-1.5.tar.bz2",
-      "sha512": "7affb14874431eba1be6e8634fcbb6247cbf6956fb88116e06e60de30a7852a407e8598176a369c2ba4bfaef4be58727e51d4bc390f705991ac83d660f611ff5"
+      "sha512": "7affb14874431eba1be6e8634fcbb6247cbf6956fb88116e06e60de30a7852a407e8598176a369c2ba4bfaef4be58727e51d4bc390f705991ac83d660f611ff5",
+      "buildroot_icu77": true
     },
     {
       "name": "libvisual",
@@ -1787,7 +1836,12 @@
       "sha512": "7a3e931c47651f7a2acc646120f9a8172c2177d1c6b2267a1a0249c0b3c97ef5c4e93c4e213c455984ec2adf3eaebaab34d489dd27161425fa1c5bcd483fa7a3",
       "fallback_urls": [
         "https://src.fedoraproject.org/repo/pkgs/rpms/linux-atm/linux-atm-2.5.1.tgz/sha512/7a3e931c47651f7a2acc646120f9a8172c2177d1c6b2267a1a0249c0b3c97ef5c4e93c4e213c455984ec2adf3eaebaab34d489dd27161425fa1c5bcd483fa7a3/linux-atm-2.5.1.tgz"
-      ]
+      ],
+      "dist_bump": {
+        "count": 1,
+        "baseline": "47"
+      },
+      "rebuild_reason": "Drop the glibc-kernheaders virtual provide for kernel-headers < 7: kernel-headers 7 no longer ships linux/atmsvc.h, so the published 2.5.1-47 build is the one that failed on it and the one ppp's build root resolves linux-atm-libs-devel from. Release does not move, so without this counter the published NEVR still matches the recipe and the fix is skipped."
     },
     {
       "name": "linux-firmware",
@@ -2365,6 +2419,16 @@
       "sha512": "ea1246acdb50dafd9ced9914ec3c8f0d499c0ca3cfd447b43a444c768a6e9ea7135e5c42d9ca0089354698ac235bd86d42f12c70a3a17c9c79f998c07461f7ab"
     },
     {
+      "name": "stix-fonts",
+      "version": "2.13b171",
+      "url": "https://github.com/stipub/stixfonts/archive/v2.13b171/stixfonts-2.13b171.tar.gz",
+      "filename": "stixfonts-2.13b171.tar.gz",
+      "sha512": "6d034ce6f760ba9ea571c715eff7c9d874e20f942b97613178dfb62f059d472d4648b2f5f91ec7c2da2b4d4347465c406f0ba630cf8180244af5d6dd1a2d9d3c",
+      "fallback_urls": [
+        "https://src.fedoraproject.org/repo/pkgs/rpms/stix-fonts/stixfonts-2.13b171.tar.gz/sha512/6d034ce6f760ba9ea571c715eff7c9d874e20f942b97613178dfb62f059d472d4648b2f5f91ec7c2da2b4d4347465c406f0ba630cf8180244af5d6dd1a2d9d3c/stixfonts-2.13b171.tar.gz"
+      ]
+    },
+    {
       "name": "switcheroo-control",
       "version": "3.0",
       "url": "https://gitlab.freedesktop.org/hadess/switcheroo-control/-/releases/3.0/downloads/switcheroo-control-3.0.tar.xz",
@@ -2776,6 +2840,137 @@
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/zvbi/zvbi-0.2.45.tar.gz/sha512/c627b65627446287cededd26857a7f25191adc8c42cab5a66e76f9673e06cafa52d9c3e2d31e60f949bbcaa155f61b31d775876f97f3f5c7cffe980548992a07/zvbi-0.2.45.tar.gz",
       "filename": "zvbi-0.2.45.tar.gz",
       "sha512": "c627b65627446287cededd26857a7f25191adc8c42cab5a66e76f9673e06cafa52d9c3e2d31e60f949bbcaa155f61b31d775876f97f3f5c7cffe980548992a07"
+    },
+    {
+      "name": "librist",
+      "version": "0.2.11",
+      "url": "https://code.videolan.org/rist/librist/-/archive/v0.2.11/librist-v0.2.11.tar.gz",
+      "filename": "librist-v0.2.11.tar.gz",
+      "sha512": "2038d085a3f0d52ac8ebdef7eebb9eaa30649581cff83f60b7128ad0b8efec398a5f606157869c2c3bf0a0011e50360f38cb04d2ad5e9885fefaa5b9fc9a817a"
+    },
+    {
+      "name": "libcue",
+      "version": "2.3.0",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/libcue/libcue-2.3.0.tar.gz/sha512/fe2c39cc9794ac36c0706405e0432bab23228d343ba4e3395220d5b2a2ebf8b3c97e71d76a628f9144977c0dd56636f78d0c2d1f9f2b0d4068a837a258f035b6/libcue-2.3.0.tar.gz",
+      "filename": "libcue-2.3.0.tar.gz",
+      "sha512": "fe2c39cc9794ac36c0706405e0432bab23228d343ba4e3395220d5b2a2ebf8b3c97e71d76a628f9144977c0dd56636f78d0c2d1f9f2b0d4068a837a258f035b6",
+      "fallback_urls": [
+        "https://github.com/lipnitsk/libcue/archive/v2.3.0/libcue-2.3.0.tar.gz"
+      ]
+    },
+    {
+      "name": "exempi",
+      "version": "2.6.4",
+      "url": "https://gitlab.freedesktop.org/libopenraw/exempi/-/archive/2.6.4/exempi-2.6.4.tar.bz2",
+      "filename": "exempi-2.6.4.tar.bz2",
+      "sha512": "20d5689346f89bacaeedf1c48e725d5f3aead399786c93858886bfced6341f58bb70cfe43da255f931cce21d86cee3c7cb4d0b074f6d4a77dc8cec56f533f380"
+    },
+    {
+      "name": "giflib",
+      "version": "6.1.3",
+      "url": "http://downloads.sourceforge.net/giflib/giflib-6.1.3.tar.gz",
+      "filename": "giflib-6.1.3.tar.gz",
+      "sha512": "fb1d6319694745e8cdac7c57e96bd3a87dbfd978f2bfd00e826742db53398011c43f9a6e7f4375b0e77b162358ddfa14d85bce652680fb5967b72c46775c0edb"
+    },
+    {
+      "name": "libgxps",
+      "version": "0.3.2",
+      "url": "https://ftp.gnome.org/pub/gnome/sources/libgxps/0.3/libgxps-0.3.2.tar.xz",
+      "filename": "libgxps-0.3.2.tar.xz",
+      "sha512": "d3d56e4906477b68d088bf83bde666f9ea8bf383add592772aad53dd571e727f1bc0410dd020e12212ede5ff8e26cb46150a9860a6f7af29c4d195f03e946fe9"
+    },
+    {
+      "name": "libmediainfo",
+      "version": "26.05",
+      "url": "http://mediaarea.net/download/source/libmediainfo/26.05/libmediainfo_26.05.tar.xz",
+      "filename": "libmediainfo_26.05.tar.xz",
+      "sha512": "8eef2b1214d2b512c8d4483f4a8a967cd05f065cb7dd0ec9ac09b2989a2bce0f60a897a7b154e90f2d6f9e3b53ac8bebe7e9c577dfe2afdb37686c027b3a97a7"
+    },
+    {
+      "name": "libosinfo",
+      "version": "1.12.0",
+      "url": "https://releases.pagure.org/libosinfo/libosinfo-1.12.0.tar.xz",
+      "filename": "libosinfo-1.12.0.tar.xz",
+      "sha512": "13647b6df14443f7e39bc09bd47be93fcd9f367ecfd7b13f3dac15e2614ad8a812d6077e070b2dc0f49f68f022881ad2fa59bac92f7731032358658a522e6572"
+    },
+    {
+      "name": "libdvdnav",
+      "version": "7.0.0",
+      "url": "https://download.videolan.org/pub/videolan/libdvdnav/7.0.0/libdvdnav-7.0.0.tar.xz",
+      "filename": "libdvdnav-7.0.0.tar.xz",
+      "sha512": "4df6336050f3b79ca2edafac28dd0383b950272ba6d8ebe6e43a85eddc737ce740d72a3fc1fa03c26fc5f285125e3672a022555a5399259386b2036c467a47f3"
+    },
+    {
+      "name": "libdvdread",
+      "version": "7.1.1",
+      "url": "https://download.videolan.org/pub/videolan/libdvdread/7.1.1/libdvdread-7.1.1.tar.xz",
+      "filename": "libdvdread-7.1.1.tar.xz",
+      "sha512": "4516788708698dbce07181627a228a67daccaaee27d706aa5478dafb02a4e520fbb89c8f8a028f8a135d162eb96ffb36169134c3da75c709be7a2bcb7477d34b"
+    },
+    {
+      "name": "game-music-emu",
+      "version": "0.6.5",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/game-music-emu/game-music-emu-0.6.5.tar.gz/sha512/c28fc36098f5e083ef43cda3f037275d7f071868ab44abf577da3f07bd9f2ffae8a65fa842b060df42baa98ad6b5f42817001749fb3c08a4023dea7334d513e9/game-music-emu-0.6.5.tar.gz",
+      "filename": "game-music-emu-0.6.5.tar.gz",
+      "sha512": "c28fc36098f5e083ef43cda3f037275d7f071868ab44abf577da3f07bd9f2ffae8a65fa842b060df42baa98ad6b5f42817001749fb3c08a4023dea7334d513e9",
+      "fallback_urls": [
+        "https://github.com/libgme/game-music-emu/archive/0.6.5/game-music-emu-0.6.5.tar.gz"
+      ]
+    },
+    {
+      "name": "libmodplug",
+      "version": "0.8.9.0",
+      "url": "http://downloads.sourceforge.net/modplug-xmms/libmodplug-0.8.9.0.tar.gz",
+      "filename": "libmodplug-0.8.9.0.tar.gz",
+      "sha512": "880e10154fd367ee24ace53ca7e32a5c1fee7dfff1f934e6499944c12779427da63e2f55f8d6ce25db0a42a5b4424053bf64305b31dbfc4ef6a8909924d655fd"
+    },
+    {
+      "name": "libopenmpt",
+      "version": "0.8.9",
+      "url": "https://lib.openmpt.org/files/libopenmpt/src/libopenmpt-0.8.9+release.autotools.tar.gz",
+      "filename": "libopenmpt-0.8.9+release.autotools.tar.gz",
+      "sha512": "f17eb759f21d22ac51cdc11d1785e5c025d912cd14154cde93a92b8d0752c63ea19890f0a289bc0b75c94a1910537dbbd6ce442f9f5210fadf7f2966e7d329a0"
+    },
+    {
+      "name": "libgsf",
+      "version": "1.14.59",
+      "url": "https://download.gnome.org/sources/libgsf/1.14/libgsf-1.14.59.tar.xz",
+      "filename": "libgsf-1.14.59.tar.xz",
+      "sha512": "3a985bacf44b6b7f6697c2bc3f5c9c4dd9fce88b16bc6eaf52f8191e578024c4fa14698fef8f3ae6dc09d74962ee16562a8f06a59c7bc25d7d5b796247cdc938"
+    },
+    {
+      "name": "srt",
+      "version": "1.5.7",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/srt/srt-1.5.7.tar.gz/sha512/877d69f8323a3a2964a76a97f3cb51ab43f762f6e8cc8f00f72c4d5e93ffb3045c092ce64a0a5f853522086d1f4f57080fead17113061f22657d653fa27899c5/srt-1.5.7.tar.gz",
+      "filename": "srt-1.5.7.tar.gz",
+      "sha512": "877d69f8323a3a2964a76a97f3cb51ab43f762f6e8cc8f00f72c4d5e93ffb3045c092ce64a0a5f853522086d1f4f57080fead17113061f22657d653fa27899c5",
+      "fallback_urls": [
+        "https://github.com/Haivision/srt/archive/v1.5.7/srt-1.5.7.tar.gz"
+      ]
+    },
+    {
+      "name": "libzen",
+      "version": "0.4.41",
+      "url": "https://mediaarea.net/download/source/libzen/0.4.41/libzen_0.4.41.tar.bz2",
+      "filename": "libzen_0.4.41.tar.bz2",
+      "sha512": "a65bd9753a4d5676eaaf1c6d3e8d6fbd460b0dfee8a5a80708b3924ad1aa2ecfe0059b6d2c6f6e490a6367727f049cafd5d86fca584e11063cb1ca376e07e529"
+    },
+    {
+      "name": "cjson",
+      "version": "1.7.19",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/cjson/cjson-1.7.19.tar.gz/sha512/7b22bdd05b8e0bf8b24ab79db128dbab9f8c2c167f4b1d3073922b8ff1e0f0e8917322283d6d4091002f014f42692984f4f641761f05965d3b66fb3eca14dc46/cjson-1.7.19.tar.gz",
+      "filename": "cjson-1.7.19.tar.gz",
+      "sha512": "7b22bdd05b8e0bf8b24ab79db128dbab9f8c2c167f4b1d3073922b8ff1e0f0e8917322283d6d4091002f014f42692984f4f641761f05965d3b66fb3eca14dc46",
+      "fallback_urls": [
+        "https://github.com/DaveGamble/cJSON/archive/v1.7.19/cjson-1.7.19.tar.gz"
+      ]
+    },
+    {
+      "name": "enca",
+      "version": "1.19",
+      "url": "http://dl.cihar.com/enca/enca-1.19.tar.xz",
+      "filename": "enca-1.19.tar.xz",
+      "sha512": "6678639992685180457bbef7b0da6e475071ec6935dfd672188fc242ef80b906e75eff9a206e07989893d0ef4ae5eb500f1d0bbd6b4d58146c94bb143b5fb296"
     }
   ]
 }

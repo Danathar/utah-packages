@@ -296,7 +296,41 @@ trailing newline and prefers the x86_64/noarch record over `lines[0]` (i686
 sorts first). Pin the real tab in a test so a return to a dnf4-style escape
 cannot happen unseen.
 
-## 17. A trusted seed must be verified, not just fresh
+## 17. CUPS 2.x and cups-filters 2.x package split
+
+**What happened.** Historically, `cups-filters` contained all filters, PPD
+helpers, braille printing, and `cups-browsed`. In upstream 2.x, this was
+split across separate source repositories: `libcupsfilters`, `libppd`,
+`cups-filters`, `cups-browsed`, and `braille-printer-app`. Fedora Rawhide
+dist-git packages each independently. Attempting to build `cups-filters`
+or `cups-browsed` without importing `libcupsfilters` and `libppd` fails build
+dependency resolution (`pkgconfig(libcupsfilters)` and `pkgconfig(libppd)`).
+Furthermore, `cups-filters` only weakly recommends `braille-printer-app`, which
+carries heavy dependencies (`liblouis`, `ImageMagick`, etc.) not in the
+Hummingbird base.
+
+**Rule.** When importing cups-filters 2.x or cups-browsed into the factory,
+import `libcupsfilters` (stage 0), `libppd` (stage 1, depends on
+libcupsfilters), and `cups-filters` / `cups-browsed` (stage 2, depending on both
+libraries). Do not pull `braille-printer-app` into the core printing closure
+unless Braille printing is explicitly required.
+
+## 18. Broad credential or tool exposure across build matrix jobs
+
+**What happened.** `setup-sccache` ran unconditionally for every matrix package
+in `build-stage.yml`, writing `ACTIONS_RUNTIME_TOKEN` and cache credentials into
+`$GITHUB_WORKSPACE/work/tools/sccache.env`. Because `/work` is mounted into every
+package's build container, untrusted upstream build code (`%build` / `%check`)
+across all packages had access to the live Actions runtime token and cache service,
+even though `mozjs140` was the sole consumer of sccache.
+
+**Rule.** Gate any workflow tool setup that exposes credentials or sensitive
+tokens to the specific matrix package that requires it
+(`if: matrix.package == 'mozjs140'`). Never mount live Actions credentials or
+compiler cache credentials into build environments for packages that do not
+consume them.
+
+## 19. A trusted seed must be verified, not just fresh
 
 **What happened.** Entry 14 made the publish job's seed step compare the
 resolved digest against the prepare-time witness, which stops an *older* run
