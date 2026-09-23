@@ -2851,9 +2851,12 @@
     {
       "name": "libcue",
       "version": "2.3.0",
-      "url": "https://github.com/lipnitsk/libcue/archive/v2.3.0/libcue-2.3.0.tar.gz",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/libcue/libcue-2.3.0.tar.gz/sha512/fe2c39cc9794ac36c0706405e0432bab23228d343ba4e3395220d5b2a2ebf8b3c97e71d76a628f9144977c0dd56636f78d0c2d1f9f2b0d4068a837a258f035b6/libcue-2.3.0.tar.gz",
       "filename": "libcue-2.3.0.tar.gz",
-      "sha512": "fe2c39cc9794ac36c0706405e0432bab23228d343ba4e3395220d5b2a2ebf8b3c97e71d76a628f9144977c0dd56636f78d0c2d1f9f2b0d4068a837a258f035b6"
+      "sha512": "fe2c39cc9794ac36c0706405e0432bab23228d343ba4e3395220d5b2a2ebf8b3c97e71d76a628f9144977c0dd56636f78d0c2d1f9f2b0d4068a837a258f035b6",
+      "fallback_urls": [
+        "https://github.com/lipnitsk/libcue/archive/v2.3.0/libcue-2.3.0.tar.gz"
+      ]
     },
     {
       "name": "exempi",
@@ -2907,9 +2910,12 @@
     {
       "name": "game-music-emu",
       "version": "0.6.5",
-      "url": "https://github.com/libgme/game-music-emu/archive/0.6.5/game-music-emu-0.6.5.tar.gz",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/game-music-emu/game-music-emu-0.6.5.tar.gz/sha512/c28fc36098f5e083ef43cda3f037275d7f071868ab44abf577da3f07bd9f2ffae8a65fa842b060df42baa98ad6b5f42817001749fb3c08a4023dea7334d513e9/game-music-emu-0.6.5.tar.gz",
       "filename": "game-music-emu-0.6.5.tar.gz",
-      "sha512": "c28fc36098f5e083ef43cda3f037275d7f071868ab44abf577da3f07bd9f2ffae8a65fa842b060df42baa98ad6b5f42817001749fb3c08a4023dea7334d513e9"
+      "sha512": "c28fc36098f5e083ef43cda3f037275d7f071868ab44abf577da3f07bd9f2ffae8a65fa842b060df42baa98ad6b5f42817001749fb3c08a4023dea7334d513e9",
+      "fallback_urls": [
+        "https://github.com/libgme/game-music-emu/archive/0.6.5/game-music-emu-0.6.5.tar.gz"
+      ]
     },
     {
       "name": "libmodplug",
@@ -2935,11 +2941,11 @@
     {
       "name": "srt",
       "version": "1.5.7",
-      "url": "https://github.com/Haivision/srt/archive/v1.5.7/srt-1.5.7.tar.gz",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/srt/srt-1.5.7.tar.gz/sha512/877d69f8323a3a2964a76a97f3cb51ab43f762f6e8cc8f00f72c4d5e93ffb3045c092ce64a0a5f853522086d1f4f57080fead17113061f22657d653fa27899c5/srt-1.5.7.tar.gz",
       "filename": "srt-1.5.7.tar.gz",
       "sha512": "877d69f8323a3a2964a76a97f3cb51ab43f762f6e8cc8f00f72c4d5e93ffb3045c092ce64a0a5f853522086d1f4f57080fead17113061f22657d653fa27899c5",
       "fallback_urls": [
-        "https://src.fedoraproject.org/repo/pkgs/rpms/srt/srt-1.5.7.tar.gz/sha512/877d69f8323a3a2964a76a97f3cb51ab43f762f6e8cc8f00f72c4d5e93ffb3045c092ce64a0a5f853522086d1f4f57080fead17113061f22657d653fa27899c5/srt-1.5.7.tar.gz"
+        "https://github.com/Haivision/srt/archive/v1.5.7/srt-1.5.7.tar.gz"
       ]
     },
     {
@@ -2952,9 +2958,12 @@
     {
       "name": "cjson",
       "version": "1.7.19",
-      "url": "https://github.com/DaveGamble/cJSON/archive/v1.7.19/cjson-1.7.19.tar.gz",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/cjson/cjson-1.7.19.tar.gz/sha512/7b22bdd05b8e0bf8b24ab79db128dbab9f8c2c167f4b1d3073922b8ff1e0f0e8917322283d6d4091002f014f42692984f4f641761f05965d3b66fb3eca14dc46/cjson-1.7.19.tar.gz",
       "filename": "cjson-1.7.19.tar.gz",
-      "sha512": "7b22bdd05b8e0bf8b24ab79db128dbab9f8c2c167f4b1d3073922b8ff1e0f0e8917322283d6d4091002f014f42692984f4f641761f05965d3b66fb3eca14dc46"
+      "sha512": "7b22bdd05b8e0bf8b24ab79db128dbab9f8c2c167f4b1d3073922b8ff1e0f0e8917322283d6d4091002f014f42692984f4f641761f05965d3b66fb3eca14dc46",
+      "fallback_urls": [
+        "https://github.com/DaveGamble/cJSON/archive/v1.7.19/cjson-1.7.19.tar.gz"
+      ]
     },
     {
       "name": "enca",
