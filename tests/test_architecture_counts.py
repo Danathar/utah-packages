@@ -60,6 +60,12 @@ class ArchitectureCountTests(unittest.TestCase):
     def test_prose_coverage_claim_matches_the_inventory(self) -> None:
         self.assertEqual(claimed(r"cover all (\d+) recipes"), len(self.records))
 
+    def test_packit_guard_claim_matches_the_inventory(self) -> None:
+        self.assertEqual(
+            claimed(r"a list of (\d+) satisfies"),
+            len(self.records),
+        )
+
     def test_quoted_validate_output_matches_successful_validate(self) -> None:
         result = subprocess.run(
             [sys.executable, str(ROOT / "tools" / "validate.py")],
