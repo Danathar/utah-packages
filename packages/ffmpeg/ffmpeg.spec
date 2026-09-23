@@ -246,7 +246,9 @@ BuildRequires:  pkgconfig(libplacebo) >= 4.192.0
 %endif
 BuildRequires:  pkgconfig(libpulse)
 BuildRequires:  pkgconfig(libqrencode)
-BuildRequires:  pkgconfig(librabbitmq)
+# rabbitmq-c is retired from Fedora Rawhide (no dist-git repo), so the AMQP
+# protocol support it backs cannot build here. Dropped with its --enable flag
+# below; AMQP output was never in the Utah contract.
 BuildRequires:  pkgconfig(librist)
 BuildRequires:  pkgconfig(librsvg-2.0)
 BuildRequires:  pkgconfig(libssh)
@@ -847,7 +849,7 @@ cp -a doc/examples/{*.c,Makefile,README} _doc/examples/
     --enable-libpulse \
     --enable-libqrencode \
     --disable-libquirc \
-    --enable-librabbitmq \
+    --disable-librabbitmq \
     --enable-librav1e \
     --enable-librist \
     --enable-librsvg \
