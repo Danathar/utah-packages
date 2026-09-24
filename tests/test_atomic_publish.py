@@ -14,11 +14,14 @@ rebuild-rpms.yml publish job, and that job is gated. This proves the gate holds:
 """
 import unittest
 
+import copy
+
 from tools.publish_gate import (
     STAGES,
     assert_gate_enforced,
     load_workflow,
     publish_allowed,
+    rebuild_stages,
 )
 
 
@@ -106,6 +109,41 @@ class PublishGateWorkflowTests(unittest.TestCase):
             if "Publish the repository as an OCI image" in name
         )
         self.assertLess(validate, publish_step)
+
+    def test_declared_waves_match_the_stage_constant(self):
+        self.assertEqual(rebuild_stages(self.workflow), STAGES)
+
+    def test_an_added_wave_missing_from_the_gate_is_rejected(self):
+        # Growth in this factory means adding a wave. A wave the workflow
+        # declares but the publish job's `if:` does not name would let a failed
+        # build publish, so discovering it is the point of this check.
+        workflow = copy.deepcopy(self.workflow)
+        added = f"rebuild{len(STAGES)}"
+        workflow["jobs"][added] = copy.deepcopy(workflow["jobs"][STAGES[-1]])
+        workflow["jobs"]["publish"]["needs"] = list(
+            workflow["jobs"]["publish"]["needs"]
+        ) + [added]
+        with self.assertRaises(AssertionError) as caught:
+            assert_gate_enforced(workflow)
+        self.assertIn(added, str(caught.exception))
+
+    def test_a_wave_the_publish_job_does_not_depend_on_is_rejected(self):
+        workflow = copy.deepcopy(self.workflow)
+        workflow["jobs"]["publish"]["needs"] = [
+            need
+            for need in workflow["jobs"]["publish"]["needs"]
+            if need != STAGES[-1]
+        ]
+        with self.assertRaises(AssertionError) as caught:
+            assert_gate_enforced(workflow)
+        self.assertIn(STAGES[-1], str(caught.exception))
+
+    def test_a_workflow_with_no_waves_is_rejected(self):
+        workflow = copy.deepcopy(self.workflow)
+        for stage in STAGES:
+            del workflow["jobs"][stage]
+        with self.assertRaises(AssertionError):
+            assert_gate_enforced(workflow)
 
     def test_transaction_validation_is_not_skippable(self):
         steps = self.workflow["jobs"]["publish"]["steps"]

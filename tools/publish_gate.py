@@ -17,6 +17,12 @@ This module encodes that gate in two forms that must agree:
   checks the publish job's own ``if:`` and step order encode the same gate, so
   the workflow and the decision function cannot drift apart.
 
+The wave inventory is discovered from the workflow rather than restated here,
+because growth in this factory means adding a wave. A check that only walks a
+hardcoded list notices a wave that disappears from the gate and never notices
+one that appears in the workflow without a gate clause -- the direction that
+would let a failed wave publish.
+
 The workflow's native ``if:`` is the gate that actually runs; this module proves
 it holds and keeps it honest.
 """
@@ -32,8 +38,19 @@ REBUILD_WORKFLOW = (
     Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rebuild-rpms.yml"
 )
 
-# Every build wave the publish job waits on, in wave order.
+# Every build wave the publish job waits on, in wave order. This restates what
+# rebuild-rpms.yml declares, so that ``publish_allowed`` can be exercised
+# without reading the workflow; ``assert_gate_enforced`` proves the two agree.
 STAGES = tuple(f"rebuild{stage}" for stage in range(11))
+
+STAGE_JOB = re.compile(r"^rebuild(\d+)$")
+
+
+def rebuild_stages(workflow: dict) -> tuple[str, ...]:
+    """The rebuild waves ``rebuild-rpms.yml`` actually declares, in wave order."""
+    jobs = workflow.get("jobs") or {}
+    matched = [(int(m.group(1)), name) for name in jobs if (m := STAGE_JOB.match(name))]
+    return tuple(name for _, name in sorted(matched))
 
 
 def publish_allowed(
@@ -73,8 +90,27 @@ def assert_gate_enforced(workflow: dict) -> None:
 
     gate = _normalized(str(publish.get("if", "")))
 
+    stages = rebuild_stages(workflow)
+    if not stages:
+        raise AssertionError("rebuild-rpms.yml declares no rebuild waves")
+    if stages != STAGES:
+        raise AssertionError(
+            "rebuild-rpms.yml declares waves "
+            f"{list(stages)}, but publish_gate.STAGES says {list(STAGES)}; "
+            "update STAGES and the publish job's if: together"
+        )
+
+    needs = publish.get("needs", [])
+    if isinstance(needs, str):
+        needs = [needs]
+    missing = [stage for stage in stages if stage not in needs]
+    if missing:
+        raise AssertionError(
+            f"publish job must depend on every rebuild wave; missing {missing}"
+        )
+
     # Each rebuild wave may pass or be empty, but a failed wave must not publish.
-    for stage in STAGES:
+    for stage in stages:
         clause = (
             f"needs.{stage}.result == 'success' || "
             f"needs.{stage}.result == 'skipped'"
