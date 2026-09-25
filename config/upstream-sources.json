@@ -2237,6 +2237,26 @@
       "sha512": "69e5a689ffba4b7a6c345d1228f2ec5c58ba3aeed5cfaebca949e541d73509f3c63cfc9df0230b11a2df84758de5edc449dfb29f0635b36fa57025441cf9cfa6"
     },
     {
+      "name": "python-pydantic",
+      "version": "2.13.5",
+      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/python-pydantic/pydantic-2.13.5.tar.gz/sha512/fd607e9bb5599737638401e9dedb4baa454b7f308b461319d59913b603f6e072354c40b161802c8198ee0961052207a2a4da7b861da6fbfd14f2dbb0f61ba762/pydantic-2.13.5.tar.gz",
+      "filename": "pydantic-2.13.5.tar.gz",
+      "sha512": "fd607e9bb5599737638401e9dedb4baa454b7f308b461319d59913b603f6e072354c40b161802c8198ee0961052207a2a4da7b861da6fbfd14f2dbb0f61ba762",
+      "stage": 4
+    },
+    {
+      "name": "python-pydantic-core",
+      "version": "2.46.5",
+      "filename": "pydantic_core-2.46.5-vendored.tar.xz",
+      "sha512": "b20f43b51737f63f5c3fd9c373e9e97dc3d0f47aad99235ef884fb081f750a88f8e60a173bc5e83383f03e73cfe37ecfe56ee3d9e3c3068e9c313d02dc3420d5",
+      "generate": {
+        "script": "tools/generated_sources.py",
+        "input": "https://files.pythonhosted.org/packages/source/p/pydantic_core/pydantic_core-2.46.5.tar.gz (sha512-pinned) and every crates.io crate its Cargo.lock pins (sha256-pinned by Cargo.lock)",
+        "method": "add vendor/<crate>-<version> for each Cargo.lock crate with .cargo-checksum.json, as cargo vendor --versioned-dirs lays it out, and repack deterministically as pydantic_core-2.46.5-vendored.tar.xz"
+      },
+      "stage": 0
+    },
+    {
       "name": "python-typing-inspection",
       "version": "0.4.4",
       "url": "https://src.fedoraproject.org/repo/pkgs/rpms/python-typing-inspection/typing_inspection-0.4.4.tar.gz/sha512/1d207f47d29a4704fdd1ca2fa39277a658d7b4551da88887cbf90e42cbfc0eeb3dbd82f86ffbfc3438f7771e943dfa37f4bb3f06dcbe9e04a2a187d11536dba4/typing_inspection-0.4.4.tar.gz",

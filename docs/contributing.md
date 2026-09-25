@@ -59,6 +59,15 @@ digest, so an explicit prune is what prevents removed RPMs from surviving
 forever. The rebuild plan only requests a cleanup publication while such an
 overlap is actually present, making the operation retryable and idempotent.
 
+Before removing a package as unneeded, prove nothing in the consumer
+transaction reaches it at runtime: `publish` installs every name in
+`config/bluefin-packages.toml` from this repository plus Hummingbird, so run
+`dnf repoquery --whatrequires` on each of its binary packages and check the
+result against that contract, transitively. #244 dropped python-pydantic after
+checking only BuildRequires and Utah's own manifests; `input-remapper`, which
+is in the contract, requires it at runtime, and the next publish failed on
+`nothing provides python3.14dist(pydantic)`.
+
 Leaving one of these behind is what makes `main` red: the other three sources
 end up at different set sizes, which surfaces later as an unrelated failing
 integer assertion instead of as "you forgot `config/upstream-sources.json`".
