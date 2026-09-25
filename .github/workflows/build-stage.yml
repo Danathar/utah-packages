@@ -70,6 +70,13 @@ on:
         required: false
         default: ''
         type: string
+      flaky_check:
+        description: >
+          Canary only: JSON names whose %check fails on its first run and
+          passes on the retry, to prove the retry. They always compile.
+        required: false
+        default: ''
+        type: string
       inject_failure:
         description: >
           Canary only: JSON names whose build fails on purpose, before any
@@ -85,6 +92,10 @@ permissions:
 
 jobs:
   build:
+    # A canary-injected failure is a real failed job, but an expected one:
+    # the canary judges it through verify-failure, so it must not turn the
+    # whole canary run red. Every production run leaves inject_failure empty.
+    continue-on-error: ${{ inputs.inject_failure != '' && contains(fromJSON(inputs.inject_failure), matrix.package) }}
     strategy:
       fail-fast: false
       matrix:
@@ -157,7 +168,7 @@ jobs:
       # beside an RPM compile; a cache hit skips the compile entirely.
       - name: Resolve the package cache key
         id: package_cache
-        if: inputs.backend == 'container' && contains(fromJSON(inputs.cacheable_packages), matrix.package)
+        if: inputs.backend == 'container' && contains(fromJSON(inputs.cacheable_packages), matrix.package) && !contains(fromJSON(inputs.flaky_check || '[]'), matrix.package)
         env:
           PACKAGE: ${{ matrix.package }}
           FACTORY_REPO: ${{ steps.factory.outputs.url }}
@@ -211,7 +222,7 @@ jobs:
           echo "key=$key" >> "$GITHUB_OUTPUT"
       - name: Restore package RPM cache
         id: package_cache_restore
-        if: inputs.backend == 'container' && contains(fromJSON(inputs.cacheable_packages), matrix.package)
+        if: inputs.backend == 'container' && contains(fromJSON(inputs.cacheable_packages), matrix.package) && !contains(fromJSON(inputs.flaky_check || '[]'), matrix.package)
         env:
           GITHUB_TOKEN: ${{ github.token }}
           KEY: ${{ steps.package_cache.outputs.key }}
@@ -252,6 +263,10 @@ jobs:
           # local file:// repo, so they cannot disagree and nothing is fetched
           # over HTTP mid-build.
           FACTORY_REPO: ${{ steps.factory.outputs.url }}
+          # Canary only; see the flaky_check input. An expression inside the
+          # run script below would make GitHub evaluate the whole script as
+          # one expression, which is over its 21000-character limit.
+          FLAKY_CHECK: ${{ inputs.flaky_check != '' && contains(fromJSON(inputs.flaky_check), matrix.package) && '1' || '' }}
         run: |
           test -d "packages/$PACKAGE"
           mkdir -p work/result
@@ -267,7 +282,7 @@ jobs:
           BUILDROOT_ICU77="$(python3 -c 'import json,sys;name=sys.argv[1];pkgs=json.loads(open("config/upstream-sources.json").read()).get("packages",[]);entry=next((p for p in pkgs if p.get("name")==name),{});print("true" if entry.get("buildroot_icu77",False) else "false")' "$PACKAGE")"
           export BUILDROOT_ICU77
           docker run --rm --privileged \
-            -e PACKAGE -e FACTORY_REPO -e DIST_BUMP -e BUILDROOT_ICU77 \
+            -e PACKAGE -e FACTORY_REPO -e DIST_BUMP -e BUILDROOT_ICU77 -e FLAKY_CHECK \
             -v "$PWD/work:/work:Z" \
             -v "$PWD/packages:/packages:ro,Z" \
             -v "$PWD/config:/repos:ro,Z" \
@@ -552,6 +567,14 @@ jobs:
               mkdir -p "$staged"
               cp -a "/packages/$PACKAGE/." "$staged/"
               cp -a "/work/sources/$PACKAGE/." "$staged/"
+              # Canary only (flaky_check): the first run of %check fails, the
+              # retry passes, so the canary proves the retry below retries.
+              # Edits the staged copy; the recipe is untouched.
+              if [ -n "${FLAKY_CHECK:-}" ]; then
+                spec="$staged/$(basename "$spec")"
+                sed -i "0,/^%check/s//%check\n[ -e \/tmp\/canary-flaky-check ] || { touch \/tmp\/canary-flaky-check; echo canary: failing this check once on purpose; exit 1; }/" "$spec"
+                grep -n -A1 "^%check" "$spec"
+              fi
               # A package that declares system users creates them from its %pre
               # at install time, which never happens to a buildroot -- so the
               # test suite runs without them. The openssh regress tests die with
@@ -630,11 +653,42 @@ jobs:
               # Captured explicitly: inside `if ! cmd`, $? is the status of the
               # negation, which is 0, so exiting with it would turn every failed
               # build green.
+              #
+              # A %check that fails once is retried once, from scratch. fish,
+              # among others, has timing-sensitive tests that fail a clean
+              # build now and then and pass on the next -- and with one flaky
+              # test able to hold back a whole run, a single retry is cheaper
+              # than a lost publication. Only %check: a failure in %prep,
+              # %build or %install is deterministic and retrying it wastes a
+              # runner. The retry is the whole of rpmbuild -ba, because
+              # --short-circuit binaries carry rpmlib(ShortCircuited) and cannot
+              # be installed. A retry that passes is reported, never silent:
+              # a warning annotation plus the flaky-check marker below, which
+              # the job summary reads. tests/test_check_retry.py holds both
+              # lanes to this.
+              build_ba() {
+                ( set -o pipefail
+                  build_rpm -ba "$spec" \
+                    --define "_sourcedir $staged" \
+                    --define "dist $DISTTAG" \
+                    --define "_rpmdir /work/result" 2>&1 | tee /work/reports/rpmbuild.log )
+              }
               status=0
-              build_rpm -ba "$spec" \
-                --define "_sourcedir $staged" \
-                --define "dist $DISTTAG" \
-                --define "_rpmdir /work/result" || status=$?
+              build_ba || status=$?
+              if [ "$status" -ne 0 ] && grep -qE "Bad exit status from .*\(%check\)" /work/reports/rpmbuild.log; then
+                echo "::warning title=flaky %check retry::$PACKAGE failed in %check (exit $status); retrying the build once"
+                mkdir -p "/work/reports/check/$PACKAGE/attempt-1"
+                cp /work/reports/rpmbuild.log "/work/reports/check/$PACKAGE/attempt-1/" || true
+                find /builddir -maxdepth 8 -type f \( -name "*.log" -o -name "testlog*.txt" \) \
+                  -exec cp --parents {} "/work/reports/check/$PACKAGE/attempt-1/" \; 2>/dev/null || true
+                rm -rf /work/result/*
+                status=0
+                build_ba || status=$?
+                if [ "$status" -eq 0 ]; then
+                  echo "::warning title=flaky %check::$PACKAGE failed %check once and passed on retry"
+                  printf "%s\n" "$PACKAGE" > /work/reports/flaky-check
+                fi
+              fi
               if [ "$status" -ne 0 ]; then
                 mkdir -p "/work/reports/check/$PACKAGE"
                 find /builddir -maxdepth 8 -type d \
@@ -675,7 +729,7 @@ jobs:
               test -n "$(find /work/result -name "*.rpm" -type f -print -quit)"
             '
       - name: Publish package RPM cache
-        if: success() && inputs.backend == 'container' && contains(fromJSON(inputs.cacheable_packages), matrix.package) && steps.package_cache_restore.outputs.hit != 'true'
+        if: success() && inputs.backend == 'container' && contains(fromJSON(inputs.cacheable_packages), matrix.package) && !contains(fromJSON(inputs.flaky_check || '[]'), matrix.package) && steps.package_cache_restore.outputs.hit != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           KEY: ${{ steps.package_cache.outputs.key }}
@@ -759,18 +813,44 @@ jobs:
                 /packages/$PACKAGE/*.spec
               # No debuginfo, for the reasons the container lane gives --
               # both defines, or the MinGW specs fail on orphaned .debug files.
-              mock --root /work/mock/utah.cfg \
-                --resultdir /work/result \
-                --define "dist $DISTTAG" \
-                --define "debug_package %{nil}" \
-                --define "__debug_install_post %{nil}" \
-                --rebuild /work/srpm/*.src.rpm
+              # A failed %check is retried once, as in the container lane;
+              # mock writes the rpmbuild output to build.log in the resultdir.
+              mock_rebuild() {
+                mock --root /work/mock/utah.cfg \
+                  --resultdir /work/result \
+                  --define "dist $DISTTAG" \
+                  --define "debug_package %{nil}" \
+                  --define "__debug_install_post %{nil}" \
+                  --rebuild /work/srpm/*.src.rpm
+              }
+              status=0
+              mock_rebuild || status=$?
+              if [ "$status" -ne 0 ] && grep -qE "Bad exit status from .*\(%check\)" /work/result/build.log; then
+                echo "::warning title=flaky %check retry::$PACKAGE failed in %check (exit $status); retrying the build once"
+                mkdir -p "/work/reports/check/$PACKAGE/attempt-1"
+                cp /work/result/*.log "/work/reports/check/$PACKAGE/attempt-1/" || true
+                status=0
+                mock_rebuild || status=$?
+                if [ "$status" -eq 0 ]; then
+                  echo "::warning title=flaky %check::$PACKAGE failed %check once and passed on retry"
+                  printf "%s\n" "$PACKAGE" > /work/reports/flaky-check
+                fi
+              fi
+              test "$status" -eq 0
               find /work/result -name "*.rpm" -type f -print0 | \
                 xargs -0 -r rpm -qp --qf "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n"
               # Same guard as the container path: an upload that finds no RPM
               # still succeeds, because the artifact also carries reports.
               test -n "$(find /work/result -name "*.rpm" -type f -print -quit)"
             '
+      - name: Report a %check that passed only on its retry
+        if: always()
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          if [ -f work/reports/flaky-check ]; then
+            echo "- \`$PACKAGE\` failed \`%check\` once and passed on retry; its RPMs are from the retry" >> "$GITHUB_STEP_SUMMARY"
+          fi
       # Its own upload, and only on failure: the RPM artifact below declares
       # if-no-files-found: error, so a build that produced nothing cannot carry
       # this out with it.
