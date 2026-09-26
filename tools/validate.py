@@ -16,6 +16,7 @@ PINNED_IMAGE = re.compile(r"(?P<base>[a-z0-9.\-/]+:[^\s@\"']+)@(?P<digest>sha256
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.check_suppressed_tests import main as check_suppressed_tests
 from tools.package_inventory import inventory
 
 
@@ -148,6 +149,9 @@ def main(root: Path = Path(".")) -> int:
             raise SystemExit(f"missing upstream provenance: {path}")
         data = json.loads(path.read_text())
         check_provenance(path, data)
+    # Report every problem in one run rather than stopping at the first, so a
+    # contributor is not sent round the loop twice.
+    status = check_suppressed_tests(root)
     # Before the recipe tally, so a package that is merely missing a Packit
     # entry cannot hide a buildroot that drifted from its lock.
     validate_buildroots(root / "config" / "buildroot-lock.json")
@@ -163,6 +167,11 @@ def main(root: Path = Path(".")) -> int:
         if missing_provenance:
             print(f"packages missing recipe provenance: {', '.join(missing_provenance)}")
         return 1
+    # The suppressed-test gate reports its own detail on stderr; say nothing
+    # more here. Printing "validated N source RPMs" and then exiting 1 leaves
+    # a CI log whose last stdout line reads as success.
+    if status:
+        return status
     # The split is the point of the count: a direct-upstream recipe carries a
     # different provenance form from a dist-git import, and both are mandatory.
     forms: dict[str, int] = {}

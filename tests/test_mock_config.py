@@ -46,11 +46,15 @@ class PolicyAgreementTests(unittest.TestCase):
     def test_builds_against_the_same_fedora_the_container_uses(self) -> None:
         # The invariant is unchanged -- both roots must pair Hummingbird with
         # one Fedora release -- but the container path declares it in
-        # rebuild-rpms.yml now, as BUILDROOT_IMAGE, rather than at each of the
+        # config/buildroot-image now, rather than at each of the
         # four places that used to name the image.
-        self.assertIn(
-            f"fedora:{FEDORA_RELEASEVER}@sha256:",
-            REBUILD.read_text(),
+        from tools import buildroot_pin
+
+        pin = buildroot_pin.get()
+        # A mirror tag starts with the Fedora release it copied (44-<date>-...).
+        tag = pin.rsplit("@", 1)[0].rsplit(":", 1)[1]
+        self.assertTrue(
+            tag == str(FEDORA_RELEASEVER) or tag.startswith(f"{FEDORA_RELEASEVER}-"),
             "the mock root and the container must pair Hummingbird with the "
             "same Fedora",
         )
@@ -100,6 +104,16 @@ class RenderTests(unittest.TestCase):
         exec(compile(render(), "mock.cfg", "exec"), namespace)  # noqa: S102
         self.assertEqual(namespace["config_opts"]["target_arch"], "x86_64")
         self.assertIn("dnf.conf", namespace["config_opts"])
+
+
+class BestTests(unittest.TestCase):
+    def test_the_mock_root_resolves_like_the_container_lane(self) -> None:
+        # best=1 refused Hummingbird's superseded-but-consistent sets
+        # (python3-gpg only at gpgme 2.0.1-3.1); the container lane never
+        # asked for best.
+        rendered = render()
+        self.assertIn("\nbest=0\n", rendered)
+        self.assertNotIn("\nbest=1\n", rendered)
 
 
 if __name__ == "__main__":

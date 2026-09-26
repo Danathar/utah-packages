@@ -96,7 +96,14 @@ gpgcheck=0
 assumeyes=1
 install_weak_deps=0
 metadata_expire=0
-best=1
+# Not best=1, although Hummingbird's own mock.cfg sets it. Its repository
+# is internally consistent; this root mixes it with Fedora and with a
+# Hummingbird that carries superseded builds -- python3-gpg exists only at
+# gpgme 2.0.1-3.1 while gpgme-devel is at 2.0.1-6 -- and best=1 refuses the
+# older consistent set: samba's hermetic lock failed on exactly that in run
+# 36207220192. The container lane, which built every published package,
+# resolves with dnf's default, best=0; the hermetic lane now matches it.
+best=0
 protected_packages=
 module_platform_id=platform:f{releasever}
 user_agent=utah-packages-mock/1
@@ -146,12 +153,27 @@ priority=5
 """
 
 
+# What a hermetic build needs on top (tools/hermetic_build.sh): mock takes
+# its bootstrap tooling from a container image instead of from the network,
+# and only an image already carrying dnf5 ("ready") can be replayed offline
+# from the lockfile. The image is the factory's own pinned build root
+# (config/buildroot-image), so the bootstrap is the same bytes every job
+# already builds with.
+HERMETIC = """
+config_opts['use_bootstrap_image'] = True
+config_opts['bootstrap_image'] = '{bootstrap_image}'
+config_opts['bootstrap_image_ready'] = True
+"""
+
+
 def render(
     *,
     root_name: str = "utah-hummingbird-x86_64",
     factory_repo: str = "",
     stages_dir: str = "",
     prior_built: tuple[str, ...] = (),
+    bootstrap_image: str = "",
+    hummingbird_extra_excludes: tuple[str, ...] = (),
 ) -> str:
     """The mock config for one build.
 
@@ -172,13 +194,18 @@ def render(
         extra += STAGES_REPO.format(path=stages_dir)
     if factory_repo:
         extra += FACTORY_REPO.format(url=factory_repo)
-    return TEMPLATE.format(
+    rendered = TEMPLATE.format(
         root_name=root_name,
         releasever=FEDORA_RELEASEVER,
-        hummingbird_repo_excludes=",".join(HUMMINGBIRD_REPO_EXCLUDE),
+        hummingbird_repo_excludes=",".join(
+            (*HUMMINGBIRD_REPO_EXCLUDE, *hummingbird_extra_excludes)
+        ),
         fedora_excludes=fedora_excludes,
         extra_repos=extra,
     )
+    if bootstrap_image:
+        rendered += HERMETIC.format(bootstrap_image=bootstrap_image)
+    return rendered
 
 
 def main() -> int:
@@ -192,6 +219,16 @@ def main() -> int:
         help="Comma-separated names earlier stages built, excluded from Fedora",
     )
     parser.add_argument("--root-name", default="utah-hummingbird-x86_64")
+    parser.add_argument(
+        "--bootstrap-image",
+        default="",
+        help="Bootstrap mock from this ready image (hermetic builds)",
+    )
+    parser.add_argument(
+        "--hummingbird-exclude",
+        default="",
+        help="Comma-separated extra excludepkgs for the Hummingbird repository",
+    )
     args = parser.parse_args()
 
     prior = tuple(name for name in args.prior_built.split(",") if name)
@@ -202,6 +239,10 @@ def main() -> int:
             factory_repo=args.factory_repo,
             stages_dir=args.stages_dir,
             prior_built=prior,
+            bootstrap_image=args.bootstrap_image,
+            hummingbird_extra_excludes=tuple(
+                name for name in args.hummingbird_exclude.split(",") if name
+            ),
         )
     )
     print(
