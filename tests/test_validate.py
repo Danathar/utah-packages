@@ -38,11 +38,15 @@ UPSTREAM_PROVENANCE = {
     "imported_at": "2026-08-30T15:46:53.402315+00:00",
 }
 
+DEFAULT_BUILDROOT_PIN = (
+    "ghcr.io/projectbluefin/utah-buildroot:44-20260925-000000000000@sha256:" + "0" * 64
+)
+
 DEFAULT_BUILDROOT_LOCK = {
     "schema": 1,
     "buildroots": {
         "fedora-44": {
-            "image": "quay.io/fedora/fedora:44@sha256:" + "0" * 64,
+            "image": DEFAULT_BUILDROOT_PIN,
             "packages": [],
         }
     },
@@ -59,6 +63,7 @@ class ValidateScriptTests(unittest.TestCase):
         locked=None,
         packit=None,
         buildroot_lock=DEFAULT_BUILDROOT_LOCK,
+        buildroot_pin=DEFAULT_BUILDROOT_PIN,
     ) -> None:
         """Write a factory tree validate.py accepts unless a case breaks one rule."""
         locked = packages if locked is None else locked
@@ -79,6 +84,8 @@ class ValidateScriptTests(unittest.TestCase):
             (root / "config" / "buildroot-lock.json").write_text(
                 json.dumps(buildroot_lock)
             )
+        if buildroot_pin is not None:
+            (root / "config" / "buildroot-image").write_text(buildroot_pin + "\n")
         entries = "".join(
             f"  {name}:\n    specfile_path: {name}.spec\n" for name in packit
         )
@@ -193,103 +200,31 @@ class ValidateScriptTests(unittest.TestCase):
         assert result.returncode != 0
         assert "invalid buildroot lock" in result.stderr
 
-    def test_detects_drift_between_buildroot_lock_and_workflow(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self.build(root)
-            wf_dir = root / ".github" / "workflows"
-            wf_dir.mkdir(parents=True)
-            wf_file = wf_dir / "rebuild-rpms.yml"
-            wf_file.write_text(
-                "jobs:\n  prepare:\n    env:\n      BUILDROOT_IMAGE: quay.io/fedora/fedora:44@sha256:" + "1" * 64 + "\n"
-            )
-            result = self.run_validate(root)
-            assert result.returncode != 0
-            assert "buildroot drift" in result.stderr
+    def test_detects_a_lock_that_names_a_different_root_from_the_pin(self) -> None:
+        # The lock and config/buildroot-image name one root twice. The weekly
+        # refresh moves both through buildroot_pin.py set; a hand edit to
+        # either one is what this catches.
+        moved = DEFAULT_BUILDROOT_PIN.rsplit("@", 1)[0] + "@sha256:" + "1" * 64
+        result = self.check(buildroot_pin=moved)
+        assert result.returncode != 0
+        assert "buildroot drift" in result.stderr
+        assert moved in result.stderr
 
-    def test_accepts_a_workflow_that_pins_the_locked_digest(self) -> None:
-        # The same digest written twice is the supported arrangement: Renovate
-        # moves both copies, and this is what stops them parting company.
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self.build(root)
-            wf_dir = root / ".github" / "workflows"
-            wf_dir.mkdir(parents=True)
-            (wf_dir / "rebuild-rpms.yml").write_text(
-                "jobs:\n  prepare:\n    env:\n      BUILDROOT_IMAGE: "
-                "quay.io/fedora/fedora:44@sha256:" + "0" * 64 + "\n"
-            )
-            result = self.run_validate(root)
-            assert result.returncode == 0, result.stderr
-
-    def test_ignores_a_workflow_image_no_buildroot_is_locked_to(self) -> None:
-        # The packit container is pinned in workflows too and is not a
-        # buildroot; the drift check must only speak for what the lock names.
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self.build(root)
-            wf_dir = root / ".github" / "workflows"
-            wf_dir.mkdir(parents=True)
-            (wf_dir / "source-pipeline.yml").write_text(
-                "        image: quay.io/packit/packit:latest@sha256:" + "9" * 64 + "\n"
-            )
-            # The locked buildroot must still be pinned somewhere, or the gate
-            # has nothing to compare; this test is about the packit pin being
-            # beneath its notice, not about the fedora pin being optional.
-            (wf_dir / "rebuild-rpms.yml").write_text(
-                "      BUILDROOT_IMAGE: quay.io/fedora/fedora:44@sha256:" + "0" * 64 + "\n"
-            )
-            result = self.run_validate(root)
-            assert result.returncode == 0, result.stderr
-
-    def test_detects_a_workflow_pin_moved_to_a_different_tag(self) -> None:
-        # Keying the comparison on repo:tag made this invisible: fedora:45
-        # shared no key with the locked fedora:44, so the gate skipped it and
-        # validate passed while the two copies named different roots.
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self.build(root)
-            wf_dir = root / ".github" / "workflows"
-            wf_dir.mkdir(parents=True)
-            (wf_dir / "rebuild-rpms.yml").write_text(
-                "      BUILDROOT_IMAGE: quay.io/fedora/fedora:45@sha256:" + "1" * 64 + "\n"
-            )
-            result = self.run_validate(root)
-            assert result.returncode != 0
-            assert "buildroot drift" in result.stderr
-            assert "quay.io/fedora/fedora:45" in result.stderr
-
-    def test_detects_a_locked_buildroot_no_workflow_pins_at_all(self) -> None:
-        # A deleted pin used to yield no comparison and therefore no failure,
-        # which is the same blindness as a wrong digest: the workflow is no
-        # longer running what the lock attests.
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self.build(root)
-            wf_dir = root / ".github" / "workflows"
-            wf_dir.mkdir(parents=True)
-            (wf_dir / "rebuild-rpms.yml").write_text(
-                "jobs:\n  prepare:\n    steps:\n      - run: echo no image pin here\n"
-            )
-            result = self.run_validate(root)
-            assert result.returncode != 0
-            assert "buildroot drift" in result.stderr
-            assert "no workflow" in result.stderr
+    def test_detects_a_lock_with_no_pin_behind_it(self) -> None:
+        # prepare pulls nothing but the pin, so a lock without one describes a
+        # root no run can have built in.
+        result = self.check(buildroot_pin=None)
+        assert result.returncode != 0
+        assert "buildroot drift" in result.stderr
+        assert "no pin" in result.stderr
 
     def test_buildroot_drift_is_reported_even_when_a_recipe_is_unlocked(self) -> None:
         # Drift used to hide behind the recipe tally: validate returned 1 for a
         # missing Packit entry before it ever looked at the buildroot.
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self.build(root, packit=())
-            wf_dir = root / ".github" / "workflows"
-            wf_dir.mkdir(parents=True)
-            (wf_dir / "rebuild-rpms.yml").write_text(
-                "      BUILDROOT_IMAGE: quay.io/fedora/fedora:44@sha256:" + "1" * 64 + "\n"
-            )
-            result = self.run_validate(root)
-            assert result.returncode != 0
-            assert "buildroot drift" in result.stderr
+        moved = DEFAULT_BUILDROOT_PIN.rsplit("@", 1)[0] + "@sha256:" + "1" * 64
+        result = self.check(packit=(), buildroot_pin=moved)
+        assert result.returncode != 0
+        assert "buildroot drift" in result.stderr
 
     def test_reports_a_package_with_no_source_lock(self) -> None:
         result = self.check(provenance=RAWHIDE_PROVENANCE, locked=())

@@ -10,80 +10,42 @@ from pathlib import Path
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 
-# Any registry reference written as repo:tag@sha256:..., the shape Renovate's
-# build-root-image manager tracks and the only shape a lock entry may take.
-PINNED_IMAGE = re.compile(r"(?P<base>[a-z0-9.\-/]+:[^\s@\"']+)@(?P<digest>sha256:[a-f0-9]{64})")
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.buildroot_pin import parse as parse_buildroot_pin
 from tools.check_suppressed_tests import main as check_suppressed_tests
 from tools.package_inventory import inventory
 
 
-def workflow_image_pins(workflows: Path) -> dict[str, set[tuple[str, str]]]:
-    """Map repo:tag to the (workflow, digest) pairs that pin it.
+def check_buildroot_drift(data: dict, pin_file: Path) -> None:
+    """Fail when a locked buildroot is not the root prepare pulls.
 
-    A buildroot is named twice -- once in the lock, once in the workflow that
-    runs it -- so the two copies can drift. This reads the workflow side.
+    prepare pulls exactly what config/buildroot-image pins
+    (tools/buildroot_pin.py). The lock names that root again, by digest, for
+    the provenance manifest, so the two copies are compared here rather than
+    trusted to stay equal. ``buildroot_pin.py set`` moves both, which keeps the
+    weekly refresh pull request green; this is what catches a hand edit to
+    either one.
+
+    The comparison is the whole reference, tag and digest, and every locked
+    root must be the pinned one: the factory runs one build root, so a second
+    entry would attest a root nothing pulls. A missing pin is drift too -- the
+    lock would then describe a root with nothing behind it.
     """
-    pins: dict[str, set[tuple[str, str]]] = {}
-    if not workflows.is_dir():
-        return pins
-    for path in sorted(list(workflows.glob("*.yml")) + list(workflows.glob("*.yaml"))):
-        for match in PINNED_IMAGE.finditer(path.read_text()):
-            pins.setdefault(match.group("base"), set()).add((path.name, match.group("digest")))
-    return pins
-
-
-def check_buildroot_drift(data: dict, workflows: Path) -> None:
-    """Fail when the workflows do not pin a locked buildroot to its digest.
-
-    The digest lives in both config/buildroot-lock.json and the workflow that
-    pulls it, because Renovate tracks the workflow shape and the manifest needs
-    the declarative record. Two copies of one digest drift, so they are
-    compared here rather than trusted to stay equal.
-
-    The comparison is per *repository*, not per ``repo:tag``. Keying on the tag
-    made the gate blind in both directions a pin can move: a workflow retagged
-    to ``fedora:45@X`` while the lock still says ``fedora:44@Y`` shared no key
-    with the lock and was silently skipped, and a pin deleted outright left
-    nothing to compare at all. Either way the two copies had parted company and
-    validate still passed. A locked buildroot must now be pinned by some
-    workflow, at the same tag and the same digest.
-
-    Nothing is required when ``.github/workflows`` is absent (a source tree
-    with no workflows pins nothing), which is what ``workflow_image_pins``
-    already reports as an empty map.
-    """
-    if not workflows.is_dir():
-        return
-    pins = workflow_image_pins(workflows)
-    by_repository: dict[str, set[tuple[str, str, str]]] = {}
-    for base, found in pins.items():
-        repository = base.rpartition(":")[0] or base
-        for workflow, digest in found:
-            by_repository.setdefault(repository, set()).add((workflow, base, digest))
+    if not pin_file.is_file():
+        raise SystemExit(
+            f"buildroot drift: the lock names a build root but there is no pin at {pin_file}"
+        )
+    try:
+        pin = parse_buildroot_pin(pin_file.read_text())
+    except ValueError as error:
+        raise SystemExit(f"invalid build-root pin {pin_file}: {error}")
     for name, buildroot in data["buildroots"].items():
-        image = buildroot["image"]
-        base, _, digest = image.partition("@")
-        repository = base.rpartition(":")[0] or base
-        candidates = by_repository.get(repository, set())
-        if not candidates:
+        if buildroot["image"] != pin:
             raise SystemExit(
-                f"buildroot drift: {name} is locked to {base}@{digest} but no "
-                f"workflow in {workflows} pins {repository}"
+                f"buildroot drift: {name} is locked to {buildroot['image']} but "
+                f"{pin_file.name} pins {pin}; move both with tools/buildroot_pin.py set"
             )
-        for workflow, found_base, found_digest in sorted(candidates):
-            if found_base != base:
-                raise SystemExit(
-                    f"buildroot drift: {name} is locked to {base}@{digest} but "
-                    f"{workflow} pins {found_base}@{found_digest}"
-                )
-            if found_digest != digest:
-                raise SystemExit(
-                    f"buildroot drift: {name} is locked to {base}@{digest} but "
-                    f"{workflow} pins {base}@{found_digest}"
-                )
 
 
 def validate_buildroots(path: Path) -> None:
@@ -108,7 +70,7 @@ def validate_buildroots(path: Path) -> None:
             if not isinstance(package, dict) or not package.get("nevra"):
                 raise SystemExit(f"buildroot {name} package locks must carry NEVRA entries")
 
-    check_buildroot_drift(data, path.resolve().parent.parent / ".github" / "workflows")
+    check_buildroot_drift(data, path.with_name("buildroot-image"))
 
 
 def check_provenance(path: Path, data: dict) -> None:

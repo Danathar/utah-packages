@@ -2,10 +2,12 @@
 """Resolve and snapshot factory buildroots.
 
 ``config/buildroot-lock.json`` is the declarative record of which image a
-buildroot is: a digest pin, not a tag. ``snapshot`` writes what the root
-actually contained -- every package NEVRA, the digest the run resolved, and the
-digest the lock expected -- so a rebuild says which bytes it used rather than
-which bytes it meant to use.
+buildroot is: a digest pin, not a tag. Its ``fedora-44`` image is the same
+reference ``config/buildroot-image`` pins for prepare to pull;
+``tools/buildroot_pin.py set`` moves both and ``tools/validate.py`` fails if
+they differ. ``snapshot`` writes what the root actually contained -- every
+package NEVRA, the digest the run resolved, and the digest the lock expected --
+so a rebuild says which bytes it used rather than which bytes it meant to use.
 
 The package list comes from ``rpm -qa`` here, or from ``--packages-from`` when
 that inventory was printed elsewhere; CI uses the second form, because the
@@ -14,18 +16,19 @@ build root is a Fedora container with no interpreter this factory may assume.
 The lock is never used as the resolved image: with no ``--image``,
 ``--digest`` or ``BUILDROOT_DIGEST`` the snapshot records ``image: null`` and
 warns, so an empty digest cannot quietly re-assert the lock's provenance.
-Those three are the only inputs. The job-wide ``BUILDROOT_IMAGE`` is not read,
-because ``tools/validate.py`` forces it to equal the lock's digest and reading
-it would re-assert that pin through a second door.
+Those three are the only inputs. ``BUILDROOT_IMAGE`` is not read: prepare
+sets it from the pin, and ``tools/validate.py`` forces the lock to equal the
+pin, so reading it would re-assert that pin through a second door.
 
-A mismatch between the resolved and locked image warns, matching the workflow:
-``quay.io/fedora/fedora:44`` is republished several times a day and failing on
-a moved tag is the outage `docs/skills/repeated-mistakes.md` section 7 records.
-``--strict`` turns that warning, and any divergence from a non-empty locked
-package list, into an error -- for an operator asking whether a root is exactly
-what was locked, not for the scheduled rebuild. It also refuses an inventory
-that could not be fully parsed: a capture that under-reports the root cannot
-answer that question either way.
+A mismatch between the resolved and locked image warns, matching prepare: a
+legacy ``quay.io/fedora/fedora:44`` pin pulls a moving tag and only warns when
+it moved, because failing on it is the outage
+`docs/skills/repeated-mistakes.md` section 7 records. ``--strict`` turns that
+warning, and any divergence from a non-empty locked package list, into an
+error -- for an operator asking whether a root is exactly what was locked, not
+for the scheduled rebuild. It also refuses an inventory that could not be
+fully parsed: a capture that under-reports the root cannot answer that
+question either way.
 """
 
 from __future__ import annotations
@@ -186,10 +189,10 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     # fallback: it says which bytes the rebuild meant to use, and writing it
     # here would attest a root the packages may not have been built in. With
     # nothing resolved the snapshot records null and says so.
-    # No environment fallback either: the workflow exports BUILDROOT_IMAGE for
-    # the whole job and validate.py forces it to equal the lock's digest, so
-    # reading it here would re-assert the lock's pin through a second door --
-    # the same attestation this command exists to avoid making.
+    # No environment fallback either: prepare sets BUILDROOT_IMAGE from the
+    # pin and validate.py forces the lock to equal the pin, so reading it here
+    # would re-assert the lock's pin through a second door -- the same
+    # attestation this command exists to avoid making.
     actual_image = getattr(args, "image", None) or (
         f"{base_ref}@{digest}" if digest else None
     )

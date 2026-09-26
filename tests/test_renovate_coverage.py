@@ -96,22 +96,6 @@ class RenovateCoverageTests(unittest.TestCase):
             "the Fedora build root is pinned in config/buildroot-image via the mirror",
         )
 
-    def test_the_buildroot_lock_is_tracked_by_the_same_manager(self) -> None:
-        # The buildroot digest is written twice -- in the lock and in the
-        # workflow that pulls it. One manager covering both files is what makes
-        # Renovate move them together; tools/validate.py fails if they diverge.
-        manager = build_root_manager()
-        self.assertIn(
-            "/^config/buildroot-lock\\.json$/", manager["managerFilePatterns"]
-        )
-        pattern = manager_pattern(manager)
-        lock = (ROOT / "config" / "buildroot-lock.json").read_text()
-        self.assertTrue(
-            pattern.search(lock),
-            "the locked buildroot image is not written as image:tag@sha256:..., "
-            "so the manager cannot refresh it",
-        )
-
     def test_the_manually_pinned_image_is_left_alone(self) -> None:
         # bootc-os moves with runtime-contract.toml, not on its own.
         pattern = manager_pattern(build_root_manager())
