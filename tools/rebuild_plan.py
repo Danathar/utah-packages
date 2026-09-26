@@ -53,6 +53,11 @@ CHUNK = 250
 # The job chain in rebuild-rpms.yml is fourteen deep and GitHub needs it static.
 STAGES = 14
 
+# rebuild-rpms.yml publishes after each of the first four waves that has
+# later waves to come (publish0..publish3); the final publication covers the
+# rest. See the comment above publish0 there.
+EARLY_PUBLICATIONS = 4
+
 
 def published_from_primary(primary: bytes) -> dict[str, tuple[str, str]]:
     """Map source package name -> (version, release) from repodata primary.xml.
@@ -496,6 +501,19 @@ def stage_outputs(build: list[dict], waves: dict[str, int] | None = None) -> dic
         outputs[f"stage{stage}_chunks"] = json.dumps(
             [json.dumps(chunk) for chunk in chunks]
         )
+    # What an early publication after wave k covers, and which waves get one:
+    # every non-empty wave that has a later non-empty wave, because the final
+    # publication covers the last one anyway. rebuild-rpms.yml publishes each
+    # of those waves' successes as it finishes (publish-repository.yml).
+    occupied = [stage for stage in range(STAGES)
+                if json.loads(outputs[f"stage{stage}"])]
+    for stage in range(EARLY_PUBLICATIONS):
+        outputs[f"through{stage}"] = json.dumps(
+            [entry["name"] for entry in build if wave(entry) <= stage]
+        )
+    outputs["early_waves"] = json.dumps(
+        [str(stage) for stage in occupied[:-1] if stage < EARLY_PUBLICATIONS]
+    )
     return outputs
 
 
