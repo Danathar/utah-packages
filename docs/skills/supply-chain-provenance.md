@@ -25,15 +25,15 @@ consumes are decoration, so do not add one ahead of its caller.
 
 - `image <name>` prints the locked reference, for inspecting the lock without
   parsing it.
-- `snapshot <name> --output <path>` writes every package NEVRA in the root,
+- `snapshot <name> --output <path>` writes every package NEVRA in the image,
   the digest the run resolved (`image`), and the digest the lock expected
   (`locked_image`). `--packages-from <file>` reads `rpm -qa` output captured
   elsewhere instead of running `rpm` here. The lock is never used as the
   resolved image: with no `--image`, `--digest` or `BUILDROOT_DIGEST` the
   snapshot records `image: null` and warns, so an empty digest cannot quietly
   re-assert the lock's provenance. Those three are the *only* inputs — in
-  particular the job-wide `BUILDROOT_IMAGE` is not read, because
-  `tools/validate.py` forces it to equal the lock's digest and reading it would
+  particular `BUILDROOT_IMAGE` is not read: prepare sets it from the pin, and
+  `tools/validate.py` forces the lock to equal the pin, so reading it would
   re-assert that pin through a second door.
 - `--strict` turns a digest mismatch, and any divergence from a non-empty
   locked package list, into a failure.
@@ -49,31 +49,48 @@ consumes are decoration, so do not add one ahead of its caller.
   standalone against a hand-edited lock can reach the comparison with an
   unusable entry; it names the defect instead of raising.
 
-**The rebuild does not pass `--strict`, deliberately.**
-`quay.io/fedora/fedora:44` is republished several times a day and each previous
-digest is garbage-collected, so failing on a moved tag recreates the outage
+**The rebuild does not pass `--strict`, deliberately.** With the factory
+mirror pin (`ghcr.io/projectbluefin/utah-buildroot`) prepare pulls the exact
+digest or fails, so the resolved and locked digests agree. A legacy
+`quay.io/fedora/fedora:44` pin pulls the moving tag and only warns when it
+moved, because failing on it recreates the outage
 [`repeated-mistakes.md`](repeated-mistakes.md) section 7 records — thirty-seven
-jobs dead mid-run on a pin that was correct when the run started. The rebuild
-records the drift instead; `--strict` is for an operator asking whether a root
-is exactly what was locked.
+jobs dead mid-run on a pin that was correct when the run started. The snapshot
+follows prepare and records the drift; `--strict` is for an operator asking
+whether a root is exactly what was locked.
 
-**The digest is written twice** — in the lock and in `BUILDROOT_IMAGE` in
-`.github/workflows/rebuild-rpms.yml` — because Renovate tracks the workflow
-shape and the manifest needs the declarative record. Two copies of one digest
-drift, so:
+**The digest is written twice** — in the lock and in
+[`config/buildroot-image`](../../config/buildroot-image), the pin prepare
+pulls — because the manifest needs the declarative record and the pin file
+holds exactly one reference and nothing else. Two copies of one digest drift,
+so:
 
-- `renovate.json`'s `build-root-image` manager covers both files, and moves
-  them in one pull request.
-- `tools/validate.py` fails `just check` when the workflows do not pin a
-  locked buildroot to exactly what the lock names. The comparison is per
-  *repository*, not per `repo:tag`, so all three ways the copies part company
-  fail: a different digest, a pin retagged to `fedora:45` while the lock says
-  `fedora:44`, and a pin deleted outright. A locked buildroot no workflow pins
-  at all is drift, not an absence of evidence.
+- `tools/buildroot_pin.py set`, which the weekly `refresh-buildroot.yml` runs,
+  moves both. It reads the lock first, so a lock it cannot parse fails the
+  move instead of leaving the pin moved alone. A locked `packages` list is left
+  as it was: it described the old root, and `snapshot --strict` should say so.
+- `tools/validate.py` fails `just check` when any locked buildroot is not
+  exactly the pinned reference, tag and digest, or when there is no pin.
 
-Do not resolve that duplication by deleting either copy without moving what
-depends on it: `tests/test_renovate_coverage.py` requires every workflow image
-pin to be tracked, and the lock is what the manifest publishes.
+Renovate does not track either copy. It used to move `quay.io/fedora/fedora:44`
+in the workflow; the factory now mirrors that image itself, and a quay.io
+digest pin rots (`tests/test_renovate_coverage.py`).
+
+## What the snapshot describes
+
+The snapshot is the pinned image's own package set: preflight runs `rpm -qa`
+first, before it adds repositories or installs anything. That is the set the
+recorded digest names, so the NEVRA list and the digest beside it make one
+claim about one thing.
+
+It is not the root any package was built in, and it does not pretend to be.
+The hermetic lane resolves each package's root in mock from its real
+BuildRequires and uploads it, NEVRA by NEVRA with its URL, as
+`lock-s<N>-<package>` (`buildroot_lock.json`, with the image recorded as the
+bootstrap by digest). The container lane installs `@buildsys-build` and the
+BuildRequires on top of this image, and its post-builddep `rpm -qa` is what
+the package cache key hashes. Read the snapshot as the shared base those roots
+start from.
 
 ## The snapshot runs on the runner
 
@@ -114,10 +131,19 @@ the exceptions are a list to shorten rather than a property to grep for.
 ## The manifest
 
 `tools/factory_manifest.py` writes `manifest.json` beside the repository: the
-built RPMs, the source reports and their verification summary, the buildroot
-snapshots, the lock itself, and the published OCI reference and digest. The
-publish job writes it twice — once before the container build, once after, when
-the OCI digest exists — and uploads it as the `factory-manifest` artifact.
+published RPMs, the source reports and their verification summary, the
+buildroot snapshots, the lock itself, and the published OCI reference and
+digest. Every publication in `.github/workflows/publish-repository.yml` writes
+it twice — once before the container build, so it ships inside the image, and
+once after, when the OCI digest exists — and uploads it as
+`factory-manifest` (the final publication) or `factory-manifest-wave<N>` (an
+early one), prefixed like every other artifact of the run.
+
+Its sources are `repository/reports`, so those reports move the way the RPMs
+do. `publish_gate.py assemble` decides which packages this publication
+replaced; their fresh reports come from `built/reports` (each package's
+`rpm-s<N>-<package>` artifact), a failed or losing package keeps the report it
+was published with, and a pruned source loses its report with its RPMs.
 
 Reports are classified by shape, not by filename: a buildroot snapshot is
 `schema`+`name`+`packages`, a source report carries `package`. Unrelated JSON
@@ -144,6 +170,9 @@ Two things stop it, and they are independent on purpose:
 * `factory_manifest.py --buildroot-digest` keeps a snapshot only when the image
   it resolved carries the digest `prepare` resolved. Anything else is named
   under `buildroots_discarded` with a reason, and warned about on stderr.
+  `rebuild-rpms.yml` hands that digest to every publication as
+  `buildroot_digest`, and every publication `needs: preflight`, so an early
+  one cannot run before the snapshot it would attest has been uploaded.
 
 Withheld, not silently dropped: "no root was measured" and "a root was measured
 and not attested" are different answers to the question asked after a bad

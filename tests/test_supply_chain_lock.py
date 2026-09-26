@@ -16,16 +16,16 @@ from tools.factory_manifest import (
     main as manifest_main,
     source_verification,
 )
-from tools.publish_gate import load_workflow
+from tools.publish_gate import PUBLISH_USES, PUBLISH_WORKFLOW, load_workflow
 from tools.source_pipeline import main as source_pipeline_main
 
 
 class BuildrootLockTests(unittest.TestCase):
     def setUp(self) -> None:
         # cmd_snapshot still reads BUILDROOT_DIGEST when no --digest is given,
-        # and the prepare job exports one for the whole job, so strip it to see
-        # only what each test passes. BUILDROOT_IMAGE and ACTUAL_BUILDROOT_IMAGE
-        # are deliberately left alone: they are no longer read at all, and
+        # and a runner may carry one, so strip it to see only what each test
+        # passes. BUILDROOT_IMAGE and ACTUAL_BUILDROOT_IMAGE are deliberately
+        # left alone: they are not read at all, and
         # test_cmd_snapshot_ignores_the_workflows_buildroot_image_variable
         # exports one to prove it.
         isolated = {
@@ -168,11 +168,11 @@ class BuildrootLockTests(unittest.TestCase):
             self.assertNotIn(locked_img, json.dumps(data["image"]))
 
     def test_cmd_snapshot_ignores_the_workflows_buildroot_image_variable(self) -> None:
-        # The prepare job exports BUILDROOT_IMAGE for the whole job, and
-        # validate.py forces that variable to equal the lock's digest. Reading
-        # it as the resolved image would re-assert the lock's own pin through a
-        # second door, so it is not read: running inside that environment with
-        # nothing resolved still records null.
+        # prepare sets BUILDROOT_IMAGE from the pin, and validate.py forces the
+        # lock to equal that pin. Reading it as the resolved image would
+        # re-assert the lock's own pin through a second door, so it is not
+        # read: running inside that environment with nothing resolved still
+        # records null.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             lock = root / "lock.json"
@@ -623,27 +623,44 @@ class PublishSeedHygieneTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.steps = load_workflow()["jobs"]["publish"]["steps"]
+        cls.steps = load_workflow(PUBLISH_WORKFLOW)["jobs"]["publish"]["steps"]
+        cls.rebuild_jobs = load_workflow()["jobs"]
 
     def _index(self, predicate) -> int:
         return next(i for i, step in enumerate(self.steps) if predicate(step))
 
+    def _named(self, fragment: str) -> int:
+        return self._index(lambda step: fragment in str(step.get("name", "")))
+
     def test_seed_step_prunes_the_previous_runs_buildroot_snapshots(self) -> None:
-        seed = self._index(
-            lambda step: "seed repository from the prepare-time factory image"
-            in str(step.get("name", ""))
-        )
+        seed = self._named("seed repository from the prepare-time factory image")
         self.assertIn(
             "rm -f repository/reports/buildroot-*.json", self.steps[seed]["run"]
         )
         # The prune has to happen before this run's own snapshot is downloaded,
         # or it deletes the fresh one instead of the stale one.
         download = self._index(
-            lambda step: (step.get("with") or {}).get("name") == "preflight-buildroot"
+            lambda step: (step.get("with") or {}).get("name")
+            == "${{ inputs.artifact_prefix }}preflight-buildroot"
         )
         self.assertLess(seed, download)
 
-    def test_both_manifest_writes_pass_the_runs_buildroot_digest(self) -> None:
+    def test_the_manifest_reads_reports_carried_in_before_it_and_ships_in_the_image(
+        self,
+    ) -> None:
+        # built/ is where this publication's reports land; the manifest reads
+        # repository/reports. Written after the carry, the manifest names the
+        # sources of what it replaced; written before the OCI step, it is
+        # inside the image it describes.
+        assemble = self._named("Replace the packages this run built")
+        carry = self._named("Carry the source reports")
+        manifest = self._named("Emit factory manifest before container build")
+        publish = self._named("Publish the repository as an OCI image")
+        self.assertLess(assemble, carry)
+        self.assertLess(carry, manifest)
+        self.assertLess(manifest, publish)
+
+    def test_both_manifest_writes_judge_against_the_runs_buildroot_digest(self) -> None:
         writes = [
             step
             for step in self.steps
@@ -653,9 +670,24 @@ class PublishSeedHygieneTests(unittest.TestCase):
         for step in writes:
             self.assertIn("--buildroot-digest", step["run"])
             self.assertEqual(
-                step["env"]["BUILDROOT_DIGEST"],
-                "${{ needs.prepare.outputs.buildroot_digest }}",
+                step["env"]["BUILDROOT_DIGEST"], "${{ inputs.buildroot_digest }}"
             )
+        # An empty input judges nothing, so every publication has to be handed
+        # the digest -- and has to wait for preflight, or an early publication
+        # can run before the snapshot it would attest has been uploaded.
+        callers = {
+            name: job
+            for name, job in self.rebuild_jobs.items()
+            if job.get("uses") == PUBLISH_USES
+        }
+        self.assertTrue(callers)
+        for name, job in callers.items():
+            self.assertEqual(
+                job["with"].get("buildroot_digest"),
+                "${{ needs.prepare.outputs.buildroot_digest }}",
+                name,
+            )
+            self.assertIn("preflight", job["needs"], name)
 
 
 class SourcePipelineSignatureTests(unittest.TestCase):
